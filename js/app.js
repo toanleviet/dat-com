@@ -482,6 +482,26 @@ function myTodayOrders() {
   if (!state.person) return [];
   return state.orders.filter((o) => o.person_name === state.person);
 }
+
+/** Tìm món ở menu đang xem trước, sau đó tới cache toàn bộ món (vòng quay). */
+function findDishAnywhere(dishId) {
+  const inMenu = state.dishes.find((d) => d.id === dishId);
+  if (inMenu) return inMenu;
+  return (state.allDishes || []).find((d) => d.id === dishId) || null;
+}
+
+/** Quán chứa món — ưu tiên `restaurant_id` của món, không phụ thuộc menu đang mở. */
+function findRestaurantFor(dish) {
+  if (!dish) return null;
+  if (dish.restaurant_id) {
+    const byId = state.restaurants.find((r) => r.id === dish.restaurant_id);
+    if (byId) return byId;
+  }
+  const active = state.restaurants.find((r) => r.id === state.activeRestaurantId);
+  if (active && state.dishes.some((d) => d.id === dish.id)) return active;
+  return null;
+}
+
 async function placeOrder(dishId, { replace = false } = {}) {
   if (!state.person) {
     openNameModal();
@@ -489,9 +509,9 @@ async function placeOrder(dishId, { replace = false } = {}) {
   }
   if (state.pendingDishIds.size) return { ok: false, reason: "busy" };
 
-  const dish = state.dishes.find((d) => d.id === dishId);
-  const restaurant = state.restaurants.find((r) => r.id === state.activeRestaurantId);
-  if (!dish || !restaurant) return { ok: false, reason: "not-found" };
+  const dish = findDishAnywhere(dishId);
+  if (!dish) return { ok: false, reason: "not-found" };
+  const restaurant = findRestaurantFor(dish);
 
   const mine = myTodayOrders();
   if (!replace && mine.length) return { ok: false, reason: "already-ordered" };
@@ -519,7 +539,7 @@ async function placeOrder(dishId, { replace = false } = {}) {
       .insert({
         dish_id: dish.id,
         dish_name: dish.name,
-        restaurant_name: restaurant.name,
+        restaurant_name: restaurant ? restaurant.name : "",
         person_name: state.person,
         order_date: todayISO(),
       })
@@ -527,8 +547,18 @@ async function placeOrder(dishId, { replace = false } = {}) {
       .single();
     if (error) throw error;
 
-    addLocalOrder(data.id);
-    if (!state.orders.some((o) => o.id === data.id)) state.orders.push(data);
+    const saved = data || {
+      id: "local-" + Date.now(),
+      dish_id: dish.id,
+      dish_name: dish.name,
+      restaurant_name: restaurant ? restaurant.name : "",
+      person_name: state.person,
+      order_date: todayISO(),
+      created_at: new Date().toISOString(),
+    };
+
+    addLocalOrder(saved.id);
+    if (!state.orders.some((o) => o.id === saved.id)) state.orders.push(saved);
     return { ok: true, dish };
   } catch (err) {
     return { ok: false, reason: "error", error: err };
@@ -557,15 +587,18 @@ async function addOrder(dishId) {
   const mine = myTodayOrders();
   if (mine.length) {
     const current = mine[0];
-    const target = state.dishes.find((d) => d.id === dishId);
+    const target = findDishAnywhere(dishId);
     if (!target) return;
     if (current.dish_id === dishId) {
       toast(`Bạn đã chọn "${current.dish_name}" rồi.`, "");
       return;
     }
+    const targetRestaurant = findRestaurantFor(target);
     const yes = await askConfirm({
       title: "Bạn đã chọn món rồi",
-      message: `Bạn đang chọn "${current.dish_name}" (${current.restaurant_name}). Đổi sang "${target.name}" (${state.restaurants.find((r) => r.id === state.activeRestaurantId)?.name || ""})?`,
+      message: `Bạn đang chọn "${current.dish_name}" (${current.restaurant_name}). Đổi sang "${target.name}"${
+        targetRestaurant ? ` (${targetRestaurant.name})` : ""
+      }?`,
       yesLabel: "YES, đổi",
       noLabel: "NO, giữ",
     });
@@ -573,12 +606,15 @@ async function addOrder(dishId) {
     const res = await placeOrder(dishId, { replace: true });
     if (res.ok) toast(`Đã đổi sang: ${res.dish.name}`, "success");
     else if (res.reason === "error") toast("Không đổi được: " + res.error.message, "error");
+    else toast("Không tìm thấy món này trong menu — tải lại trang.", "error");
     return;
   }
 
   const res = await placeOrder(dishId);
   if (res.ok) toast(`Đã thêm: ${res.dish.name}`, "success");
   else if (res.reason === "error") toast("Không thêm được đơn: " + res.error.message, "error");
+  else if (res.reason === "not-found") toast("Không tìm thấy món này trong menu — tải lại trang.", "error");
+  else if (res.reason === "already-ordered") toast("Bạn đã chọn món hôm nay rồi.", "");
 }
 
 function refreshMineUI() {
@@ -960,7 +996,7 @@ async function spinWheel() {
   if (currentMine.length && currentMine[0].dish_id !== dish.id) {
     const acceptSwap = await askConfirm({
       title: "Bạn đã chọn món rồi",
-      message: `Bạn đang chọn "${currentMine[0].dish_name}". Đổi sang "${dish.name}"?`,
+      message: `Bạn đang chọn "${currentMine[0].dish_name}" (${currentMine[0].restaurant_name}). Đổi sang "${dish.name}"?`,
       yesLabel: "YES, đổi",
       noLabel: "NO, giữ",
     });
@@ -971,9 +1007,26 @@ async function spinWheel() {
   if (res.ok) {
     toast(`Đã đặt: ${dish.name}`, "success");
     closeSpinModal();
+    switchToDishMenu(dish.id);
   } else if (res.reason === "error") {
     toast("Không đặt được: " + res.error.message, "error");
+  } else if (res.reason === "not-found") {
+    toast("Không tìm thấy món này — admin có thể vừa xoá/ẩn món. Bấm QUAY lại nhé.", "error");
   }
+}
+
+/** Chuyển sang menu chứa món vừa đặt để user thấy ✓ và card được highlight. */
+function switchToDishMenu(dishId) {
+  const dish = findDishAnywhere(dishId);
+  const restaurant = findRestaurantFor(dish);
+  if (!restaurant) return;
+  const visibleHere = state.dishes.some((d) => d.id === dishId);
+  if (restaurant.id === state.activeRestaurantId && visibleHere) {
+    refreshMineUI();
+    return;
+  }
+  if (state.pendingDishIds.size) return;
+  selectRestaurant(restaurant.id).catch(() => {});
 }
 
 function scrollSpinResultIntoView() {
