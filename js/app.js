@@ -73,6 +73,9 @@ const el = {
   spinDishName: $("spinDishName"),
   spinResult: $("spinResult"),
   spinResultCard: $("spinResultCard"),
+  mainContent: $("mainContent"),
+  lockNotice: $("lockNotice"),
+  lockEnterBtn: $("lockEnterBtn"),
 };
 
 /* ---------------- Helpers ---------------- */
@@ -165,7 +168,18 @@ function setPerson(name, { openModal = false } = {}) {
     el.personChip.classList.add("hidden");
     refreshMineUI();
   }
+  syncPersonGates();
   if (openModal) openNameModal();
+}
+
+function syncPersonGates() {
+  const has = Boolean(state.person);
+  const ready = Boolean(state.loaded);
+  const unlocked = has && ready;
+  if (el.spinFab) el.spinFab.classList.toggle("hidden", !unlocked);
+  if (el.mainContent) el.mainContent.classList.toggle("locked", !has);
+  if (el.lockNotice) el.lockNotice.classList.toggle("hidden", has);
+  if (el.copyBtn) el.copyBtn.disabled = !has || state.orders.length === 0;
 }
 
 function openNameModal() {
@@ -188,6 +202,7 @@ el.nameForm.addEventListener("submit", (e) => {
 });
 
 el.personChip.addEventListener("click", () => openNameModal());
+if (el.lockEnterBtn) el.lockEnterBtn.addEventListener("click", () => openNameModal());
 
 /* ---------------- Data loading ---------------- */
 
@@ -224,6 +239,7 @@ async function loadOrders() {
   if (error) throw error;
   state.orders = data || [];
   renderOrders();
+  syncPersonGates();
 }
 
 /* ---------------- Reviews: data ---------------- */
@@ -580,11 +596,6 @@ if (el.confirmModal) {
 const spinState = { angle: 0, spinning: false, cooldown: 0 };
 
 const SPIN_COLORS = [
-  "#ff6b6b", "#f59e0b", "#22c55e", "#3b82f6",
-  "#a855f7", "#ec4899", "#14b8a6", "#f97316",
-  "#84cc16", "#6366f1",
-];
-
   "#ff6b6b", "#f59e0b", "#22c55e", "#3b82f6",
   "#a855f7", "#ec4899", "#14b8a6", "#f97316",
   "#84cc16", "#6366f1",
@@ -1037,7 +1048,7 @@ async function deleteReview(reviewId) {
 function renderOrders() {
   const orders = state.orders;
   el.orderCount.textContent = `${orders.length} đơn`;
-  el.copyBtn.disabled = orders.length === 0;
+  el.copyBtn.disabled = orders.length === 0 || !state.person;
 
   if (!orders.length) {
     el.orderList.innerHTML = "";
@@ -1209,6 +1220,7 @@ async function loadAll() {
       else await refreshActiveDishes();
     }
     state.loaded = true;
+    syncPersonGates();
     subscribeRealtime();
   } catch (err) {
     showError("Không kết nối được Supabase.", err.message || String(err));
@@ -1219,6 +1231,10 @@ el.retryBtn.addEventListener("click", () => loadAll());
 
 async function init() {
   el.todayLabel.textContent = formatTodayLabel();
+
+  const savedPerson = (localStorage.getItem(KEY_PERSON) || "").trim();
+  setPerson(savedPerson);
+  if (!savedPerson) openNameModal();
 
   if (!isConfigured()) {
     el.configBanner.classList.remove("hidden");
@@ -1234,11 +1250,20 @@ async function init() {
     return;
   }
 
-  const savedPerson = (localStorage.getItem(KEY_PERSON) || "").trim();
-  setPerson(savedPerson);
-  if (!savedPerson) openNameModal();
-
   await loadAll();
 }
 
-init();
+function bootSafely() {
+  const onFail = (err) => {
+    showError("Không khởi động được trang.", err && err.message ? err.message : String(err));
+    if (el.nameModal) el.nameModal.classList.remove("hidden");
+  };
+  try {
+    const result = init();
+    if (result && typeof result.catch === "function") result.catch(onFail);
+  } catch (err) {
+    onFail(err);
+  }
+}
+
+bootSafely();

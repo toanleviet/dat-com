@@ -38,7 +38,16 @@
       <button id="retryBtn" class="btn btn-sm" type="button">Thử lại</button>
     </div>
 
-    <div class="layout">
+    <div id="lockNotice" class="lock-notice hidden">
+      <span class="lock-icon">🔒</span>
+      <div>
+        <strong>Hãy nhập tên của bạn trước</strong>
+        <div class="small">Nhập tên để bắt đầu đặt cơm. Không cần tài khoản.</div>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" id="lockEnterBtn">Nhập tên</button>
+    </div>
+
+    <div class="layout locked" id="mainContent">
       <section>
         <div class="my-pick-bar hidden" id="myPickBar">
           <span class="my-pick-icon">🍱</span>
@@ -101,7 +110,7 @@
 
   <div class="toast-wrap" id="toastWrap"></div>
 
-  <button type="button" class="spin-fab" id="spinFab" title="Gợi ý món cho tui">
+  <button type="button" class="spin-fab hidden" id="spinFab" title="Gợi ý món cho tui">
     <span class="spin-fab-icon">🎲</span>
     <span class="spin-fab-text">Gợi ý món cho tui!!!</span>
   </button>

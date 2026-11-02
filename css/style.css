@@ -566,6 +566,32 @@ button { font: inherit; cursor: pointer; }
   white-space: pre-wrap;
 }
 
+/* ---------- Khoá trang khi chưa nhập tên ---------- */
+
+.lock-notice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 18px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px dashed #f3b98d;
+  box-shadow: var(--shadow);
+}
+
+.lock-notice .lock-icon { font-size: 1.9rem; }
+.lock-notice > div { flex: 1; min-width: 0; }
+.lock-notice strong { display: block; margin-bottom: 2px; }
+
+.layout.locked {
+  position: relative;
+  filter: blur(3px) grayscale(.4);
+  opacity: .5;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* ---------- Món đã chọn của tôi ---------- */
 
 .my-pick-bar {
