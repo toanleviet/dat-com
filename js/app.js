@@ -189,8 +189,7 @@ function setPerson(name, { openModal = false } = {}) {
 function syncPersonGates() {
   const has = Boolean(state.person);
   const ready = Boolean(state.loaded);
-  const unlocked = has && ready;
-  if (el.spinFab) el.spinFab.classList.toggle("hidden", !unlocked);
+  if (el.spinFab) el.spinFab.classList.toggle("hidden", !ready);
   if (el.mainContent) el.mainContent.classList.toggle("locked", !has);
   if (el.lockNotice) el.lockNotice.classList.toggle("hidden", has);
   if (el.copyBtn) el.copyBtn.disabled = !has || state.orders.length === 0;

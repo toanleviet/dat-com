@@ -68,6 +68,12 @@
             <h2 id="dishSectionTitle">2. Chọn món</h2>
             <span class="small muted" id="dishCount"></span>
           </div>
+
+          <button type="button" class="btn-spin-banner hidden" id="spinFab" title="Gợi ý món cho tui">
+            <span class="spin-fab-icon">🎲</span>
+            <span class="spin-fab-text">Gợi ý món cho tui!!!</span>
+          </button>
+
           <div class="dish-search">
             <span class="dish-search-icon" aria-hidden="true">🔍</span>
             <input id="dishSearch" class="input dish-search-input" type="search"
@@ -99,7 +105,9 @@
             Ai cũng có thể xóa bất kỳ đơn nào. Bấm ★ trên món để xem đánh giá.
           </p>
         </div>
+      </aside>
 
+      <aside class="chat-panel">
         <div class="card chat-card">
           <div class="section-head">
             <h2>💬 Chat</h2>
@@ -132,11 +140,6 @@
   </div>
 
   <div class="toast-wrap" id="toastWrap"></div>
-
-  <button type="button" class="spin-fab hidden" id="spinFab" title="Gợi ý món cho tui">
-    <span class="spin-fab-icon">🎲</span>
-    <span class="spin-fab-text">Gợi ý món cho tui!!!</span>
-  </button>
 
   <div class="modal-backdrop hidden" id="confirmModal">
     <div class="modal modal-confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle">

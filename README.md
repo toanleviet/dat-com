@@ -76,7 +76,7 @@ hoặc `npx serve` nếu không có Python.
    - Thanh **"Bạn hôm nay: …"** phía trên danh sách món cho biết món bạn đang chọn.
    - Nút bị disable khi request đang chạy (chống double-click tạo đơn trùng).
    - Đặt xong nút thành **✓**, card viền xanh, các card khác bị làm mờ.
-3. **Gợi ý món cho tui!!!** — nút tròn nhiều màu ở góc dưới phải màn hình.
+3. **Gợi ý món cho tui!!!** — nút gradient nhiều màu nằm ngay **trên cùng khung "Chọn món"**.
    Bấm → mở **Lucky Food** với vòng quay chứa toàn bộ món đang bán (cả 2 menu).
    Bấm **QUAY NGAY** → bánh xe quay ~3.5 giây → hiện món được chọn kèm hộp thoại
    **"Bạn muốn chọn món này chứ?"** (YES / NO).
@@ -119,7 +119,9 @@ Danh sách chính chỉ hiển thị đơn của **ngày hiện tại theo giờ
 
 ### Chat nội bộ
 
-- Panel **💬 Chat** nằm dưới **Đơn hôm nay** ở cột phải (mobile: cuối trang).
+- Panel **💬 Chat** là **cột riêng bên phải** (sau cột Đơn hôm nay) trên desktop, cao bằng
+  màn hình và có vùng cuộn riêng nên danh sách đơn dài không làm chat bị bóp nhỏ.
+  Trên màn hình hẹp chat xuống dưới cùng.
 - Mọi người dùng chung phòng chat theo link. Tin nhắn realtime, hiển thị tên người gửi,
   giờ gửi; tin của bạn nằm bên phải, tin người khác bên trái.
 - Tối đa **300 ký tự**/tin, hiển thị 80 tin gần nhất.
