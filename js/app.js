@@ -247,13 +247,25 @@ async function loadRestaurants() {
 async function loadDishes(restaurantId) {
   const { data, error } = await state.supabase
     .from("dishes")
-    .select("id, name, image_url, is_available, sort_order")
+    .select("id, name, image_url, is_available, is_new, sort_order, created_at")
     .eq("restaurant_id", restaurantId)
     .eq("is_available", true)
+    .order("is_new", { ascending: false })
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) throw error;
-  return data || [];
+  return sortDishes(data || []);
+}
+
+/** Món NEW luôn đứng đầu, rồi tới sort_order, rồi created_at. */
+function sortDishes(list) {
+  return list.slice().sort((a, b) => {
+    if (Boolean(a.is_new) !== Boolean(b.is_new)) return a.is_new ? -1 : 1;
+    const sa = a.sort_order ?? 0;
+    const sb = b.sort_order ?? 0;
+    if (sa !== sb) return sa - sb;
+    return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+  });
 }
 
 async function loadOrders() {
@@ -288,7 +300,11 @@ function refreshStarBadges() {
   el.dishArea.querySelectorAll("[data-review]").forEach((btn) => {
     const stats = state.reviewStats.get(btn.dataset.review);
     const score = btn.querySelector(".star-score");
-    if (score) score.textContent = stats && stats.count ? stats.avg.toFixed(1) : "Mới";
+    if (!score) return;
+    const has = Boolean(stats && stats.count);
+    score.textContent = has ? stats.avg.toFixed(1) : "";
+    score.classList.toggle("hidden", !has);
+    btn.classList.toggle("has-score", has);
   });
 }
 
@@ -408,7 +424,8 @@ function filteredDishes() {
 }
 
 function renderDishes() {
-  const all = state.dishes;
+  const all = sortDishes(state.dishes);
+  state.dishes = all;
   const list = filteredDishes();
   const hasFilter = Boolean(normalizeSearch(state.dishFilter));
 
@@ -436,16 +453,21 @@ function renderDishes() {
   el.dishArea.innerHTML = `<div class="dish-grid">${list
     .map((d) => {
       const stats = state.reviewStats.get(d.id);
+      const isNew = d.is_new === true;
+      const hasScore = Boolean(stats && stats.count);
       return `
-      <div class="dish-card" data-id="${escapeHtml(d.id)}">
+      <div class="dish-card${isNew ? " is-new" : ""}" data-id="${escapeHtml(d.id)}">
         <div class="dish-thumb">
           <img alt="${escapeHtml(d.name)}" />
           <div class="placeholder"></div>
-          <button type="button" class="star-btn" data-review="${escapeHtml(d.id)}"
+          ${isNew ? '<span class="new-badge" aria-label="Món mới">NEW</span>' : ""}
+          <button type="button" class="star-btn${hasScore ? " has-score" : ""}" data-review="${escapeHtml(d.id)}"
                   title="Đánh giá ${escapeHtml(d.name)}"
                   aria-label="Đánh giá ${escapeHtml(d.name)}">
             <span class="star-icon">★</span>
-            <span class="star-score">${stats && stats.count ? stats.avg.toFixed(1) : "Mới"}</span>
+            <span class="star-score${hasScore ? "" : " hidden"}">${
+              hasScore ? stats.avg.toFixed(1) : ""
+            }</span>
           </button>
         </div>
         <div class="dish-body">
@@ -869,7 +891,7 @@ async function ensureSpinPool() {
   if (state.allDishes && state.allDishes.length) return state.allDishes;
   const { data, error } = await state.supabase
     .from("dishes")
-    .select("id, name, image_url, restaurant_id, sort_order")
+    .select("id, name, image_url, restaurant_id, is_new, sort_order")
     .eq("is_available", true)
     .order("name", { ascending: true });
   if (error) throw error;

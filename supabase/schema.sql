@@ -19,6 +19,7 @@ create table if not exists public.dishes (
   name          text not null,
   image_url     text,
   is_available  boolean not null default true,
+  is_new        boolean not null default false,
   sort_order    int not null default 0,
   created_at    timestamptz not null default now()
 );
@@ -217,6 +218,18 @@ begin
     execute 'alter publication supabase_realtime add table public.chat_messages';
   end if;
 end $$;
+
+-- =============================================================
+-- MIGRATION: Nhãn NEW cho món mới
+-- Chạy phần này nếu database đã tồn tại từ phiên bản trước.
+-- Chạy lại nhiều lần vẫn an toàn.
+-- =============================================================
+
+alter table public.dishes
+  add column if not exists is_new boolean not null default false;
+
+create index if not exists dishes_new_idx
+  on public.dishes (restaurant_id, is_new desc, sort_order);
 
 -- ---------- (Tuỳ chọn) Tự xóa đơn cũ hơn 31 ngày bằng pg_cron ----------
 -- Chỉ chạy nếu project hỗ trợ extension pg_cron. Nếu lỗi, bỏ qua phần này

@@ -1,258 +1,60 @@
-# Tool đặt cơm công ty
+# 🍚 Đặt cơm công ty
 
-Web tĩnh (HTML/CSS/JS thuần, không build) + Supabase để nhân viên đặt cơm từ menu
-**Hải Nam** và **Dejavu**. Danh sách đơn của **hôm nay** cập nhật realtime giữa mọi máy,
-người tổng hợp bấm **Copy danh sách** để gửi sếp.
+Web tĩnh (HTML/CSS/JS thuần, không build) + Supabase, để cả công ty chọn món cho bữa trưa:
+ai cũng thấy danh sách đơn của **hôm nay** cập nhật realtime, người tổng hợp bấm **Copy danh sách** gửi sếp.
 
-Cú pháp mỗi dòng:
+Cú pháp mỗi dòng khi copy:
 
 ```
 Cơm sườn_(Hải Nam) - An
 ```
 
----
+## Có gì
 
-## 1. Cài đặt Supabase (làm 1 lần, bắt buộc)
+- **Đặt cơm** — chọn menu (Hải Nam / Dejavu), mỗi người **1 món / ngày**, đổi món có xác nhận.
+- **Realtime** — đơn và đánh giá cập nhật giữa mọi máy, không cần tải lại.
+- **Lọc món** — gõ có dấu hay không dấu đều đúng (`com` = `cơm`).
+- **Gợi ý món cho tui!!!** — vòng quay Lucky Food chọn ngẫu nhiên món trong tất cả menu.
+- **Đánh giá món** — chấm 1–5 sao, bình luận, điểm trung bình ngay trên card.
+- **Nhãn NEW** — tick ở trang Setup: món viền gradient chạy, nhãn NEW phát sáng, luôn đứng đầu menu.
+- **Chat nội bộ** — một phòng chat chung cho cả công ty.
+- **Import CSV** — thêm hàng loạt món, có xem trước và bỏ qua món trùng.
+- **Copy danh sách** — xuất text đúng cú pháp để dán vào Word/Slack.
 
-1. Vào <https://supabase.com> → đăng nhập → **New project**.
-   - Name: `dat-com` (tùy ý), Region: `Southeast Asia (Singapore)`.
-   - Lưu lại **Database password** (không dùng đến nhưng phải giữ).
-2. Đợi project khởi tạo xong (~2 phút).
-3. Mở **SQL Editor** → **New query** → dán **toàn bộ** nội dung file
-   [`supabase/schema.sql`](supabase/schema.sql) → **Run**.
-   - File tạo 4 bảng: `restaurants`, `dishes`, `orders`, `reviews`; bật RLS + policy;
-     tạo bucket `dish-images` (public); bật realtime; seed 2 quán + 12 món mẫu.
-   - Chạy lại file này nhiều lần cũng an toàn (idempotent).
+## Cài đặt trong 5 bước
 
-> **Đã có database từ phiên bản trước (chưa có bảng `reviews`)?**
-> Chạy lại toàn bộ `schema.sql`. Phần `MIGRATION: Đánh giá món` tạo bảng
-> `reviews`; phần realtime đã được bọc `do $$ ... $$` nên không còn lỗi
-> `42710: relation ... is already member of publication` khi chạy lần hai.
-4. Mở **Project Settings → API** (hoặc **Project Settings → API Keys**), copy:
-   - **Project URL** — dạng `https://xxxxx.supabase.co`
-   - **anon public** key (JWT dài)
-5. Mở `js/config.js`, điền:
+1. Tạo project trên <https://supabase.com> (region Singapore).
+2. Mở **SQL Editor** → dán toàn bộ `supabase/schema.sql` → **Run**.
+3. Copy **Project URL** + **anon public key** → dán vào `js/config.js`.
+4. Mở `index.html`, hoặc chạy `python -m http.server 8000` rồi vào <http://localhost:8000>.
+5. Chia sẻ link cho mọi người (hướng dẫn deploy ở bảng dưới).
 
-```js
-export const SUPABASE_URL = "https://xxxxx.supabase.co";
-export const SUPABASE_ANON_KEY = "eyJhbGciOi...";
-```
+> **Đã có database từ bản cũ?** Chạy lại (hoặc chỉ chạy phần `MIGRATION:` liên quan) trong `supabase/schema.sql`. File idempotent, chạy lại nhiều lần an toàn.
 
-> Không cần tạo user, không cần đăng nhập. Nếu 2 giá trị này để trống,
-> trang sẽ hiện banner hướng dẫn thay vì bị lỗi.
+## Tài liệu chi tiết
 
----
-
-## 2. Chạy thử
-
-**Cách A – mở trực tiếp:** double-click `index.html`.
-Hoạt động được, nhưng nên dùng cách B để clipboard và một số API trình duyệt
-hoạt động ổn định.
-
-**Cách B – chạy server tĩnh (khuyến nghị):**
-
-```powershell
-cd D:\DatCom
-python -m http.server 8000
-```
-
-Mở <http://localhost:8000>. Trên Windows có thể dùng `py -m http.server 8000`
-hoặc `npx serve` nếu không có Python.
-
----
-
-## 3. Sử dụng
-
-### Trang đặt cơm — `index.html`
-
-1. Lần đầu nhập tên (lưu vào `localStorage` key `dedatcom_person`, lần sau tự điền).
-   Bấm chip tên trên header để đổi tên.
-2. Bấm **Menu Hải Nam** / **Menu Dejavu** → bấm **+** trên món để đặt.
-   - **Lọc món**: ô tìm kiếm phía trên danh sách món. Gõ "cơm" hoặc "com" (không dấu)
-     đều lọc đúng; `Esc` hoặc nút ✕ để xoá lọc. Bộ đếm hiện `3/6 món`.
-   - **Mỗi người chỉ được chọn 1 món / ngày.** Đã chọn rồi mà bấm món khác sẽ hiện
-     hộp thoại **"Bạn đã chọn món rồi"** với 2 nút **YES, đổi** / **NO, giữ**.
-     YES → thay đơn cũ bằng món mới; NO → không đổi gì.
-   - Thanh **"Bạn hôm nay: …"** phía trên danh sách món cho biết món bạn đang chọn.
-   - Nút bị disable khi request đang chạy (chống double-click tạo đơn trùng).
-   - Đặt xong nút thành **✓**, card viền xanh, các card khác bị làm mờ.
-3. **Gợi ý món cho tui!!!** — nút gradient nhiều màu nằm ngay **trên cùng khung "Chọn món"**.
-   Bấm → mở **Lucky Food** với vòng quay chứa toàn bộ món đang bán (cả 2 menu).
-   Bấm **QUAY NGAY** → bánh xe quay ~3.5 giây → hiện món được chọn kèm hộp thoại
-   **"Bạn muốn chọn món này chứ?"** (YES / NO).
-   - YES → đặt món đó (nếu đã có món khác thì hỏi thêm 1 lần để đổi).
-   - NO → giữ nguyên, có thể quay lại.
-4. Panel **Đơn hôm nay** ở bên phải (mobile: phía dưới) tự cập nhật realtime.
-5. **Ai cũng có thể xóa bất kỳ đơn nào** — mỗi dòng đơn đều có nút **✕** kèm hộp
-   thoại xác nhận hiện tên món và tên người đã đặt.
-6. **Copy danh sách** → dán vào Word/Slack/Notepad, mỗi dòng đúng cú pháp
-   `<Tên món>_(<tên quán>) - <tên người đặt>`.
-
-### Đánh giá món
-
-- Mỗi card món có nút **★** ở góc dưới bên phải ảnh: chưa có đánh giá hiện `Mới`,
-  đã có hiện điểm trung bình (VD `4.3`).
-- Bấm **★** → mở hộp **Đánh giá món**: điểm trung bình, chọn 1–5 sao, nhận xét
-  (không bắt buộc, tối đa 300 ký tự), **Gửi đánh giá**.
-- Bên dưới là danh sách bình luận (sao, tên người, thời gian, nội dung), mới nhất
-  ở trên. Mọi người xem được đánh giá của nhau, realtime.
-- Ai cũng xóa được một đánh giá (nút ✕, có xác nhận).
-- Một người có thể đánh giá một món nhiều lần (mỗi lần 1 dòng); điểm trung bình
-  tính trên tất cả các dòng.
-- Khi xóa món ở trang Setup, đánh giá của món đó bị xóa theo.
-
-Danh sách chính chỉ hiển thị đơn của **ngày hiện tại theo giờ máy** (trường
-`order_date = YYYY-MM-DD` local). Sang ngày mới danh sách tự trống.
-
-### Trang quản lý — `setup.html`
-
-- Thêm món: tên, thuộc quán, thứ tự, ảnh (tùy chọn).
-- **Ai cũng có quyền** thêm / sửa / ẩn / bật / xóa món (trang không có mật khẩu).
-- Sửa: đổi tên / quán / thứ tự / ảnh.
-- **Ẩn** hoặc **Bật** món (`is_available`) — món ẩn không hiện ở trang đặt cơm.
-- **Xóa món**: đơn đã đặt vẫn giữ tên món nhờ cột snapshot `dish_name`,
-  `restaurant_name` trong bảng `orders`.
-- Ảnh upload lên bucket `dish-images`, giới hạn **2MB**, chỉ file `image/*`.
-  Không có ảnh → hiện placeholder gradient + chữ viết tắt tên món.
-- **Import hàng loạt từ CSV** (xem mục dưới).
-- **Xóa toàn bộ đơn** — reset thủ công khi sang tháng mới: xác nhận 2 bước
-  (confirm + gõ `XOA`).
-
-### Import món từ CSV
-
-File CSV **2 cột**, dòng đầu là header:
-
-```csv
-restaurant,name
-Hải Nam,Cơm sườn
-Hải Nam,Cơm gà nướng
-Dejavu,Cơm bò lúc lắc
-```
-
-| Quy tắc | Chi tiết |
+| Chủ đề | File |
 | --- | --- |
-| Header | `restaurant,name` (chấp nhận cả `quan,mon`, `Restaurant,Dish`) |
-| Phân cách | `,` hoặc `;` (Excel Việt Nam) hoặc tab — tự nhận diện |
-| Mã hoá | UTF-8. Excel: **Save As → CSV UTF-8** |
-| Tên quán | Phải khớp tên trong bảng `restaurants` (không phân biệt hoa thường, thừa dấu cách) |
-| Tên món | Tối đa 80 ký tự. Có dấu phẩy thì bọc `"..."` |
-| Thứ tự | Tự đánh nối tiếp sau món cuối của quán đó |
-| Trùng | Món đã có trong quán → **bỏ qua**, không tạo trùng |
-| Giới hạn | 1MB, 500 dòng/lần |
+| Cài đặt Supabase, `config.js`, bảng dữ liệu, nâng cấp schema | [docs/cai-dat.md](docs/cai-dat.md) |
+| Sử dụng hằng ngày: đặt cơm, lọc, vòng quay, đánh giá, nhãn NEW, chat, Setup | [docs/su-dung.md](docs/su-dung.md) |
+| Import món từ CSV | [docs/import-csv.md](docs/import-csv.md) |
+| Deploy (GitHub Pages / Netlify) + cấu trúc file | [docs/trien-khai.md](docs/trien-khai.md) |
+| Xử lý sự cố, rủi ro & giới hạn | [docs/xu-ly-su-co.md](docs/xu-ly-su-co.md) |
 
-File mẫu: [`supabase/mau-import-mon.csv`](supabase/mau-import-mon.csv).
+## Lưu ý bảo mật
 
-**Luồng trên web:** chọn file → **xem trước** (danh sách món, dòng nào trùng/lỗi)
-→ bấm **Nhập N món**. Không ghi vào database cho tới khi bạn xác nhận.
+Trang **không có đăng nhập, không có mật khẩu**. Ai có link đều xem / thêm / xóa đơn, sửa món và đánh giá được.
+Tool chỉ phù hợp chia sẻ **nội bộ**; muốn an toàn hơn thì bật Supabase Auth hoặc chặn link nội bộ.
 
-### Chat nội bộ
-
-- Panel **💬 Chat** là **cột riêng bên phải** (sau cột Đơn hôm nay) trên desktop, cao bằng
-  màn hình và có vùng cuộn riêng nên danh sách đơn dài không làm chat bị bóp nhỏ.
-  Trên màn hình hẹp chat xuống dưới cùng.
-- Mọi người dùng chung phòng chat theo link. Tin nhắn realtime, hiển thị tên người gửi,
-  giờ gửi; tin của bạn nằm bên phải, tin người khác bên trái.
-- Tối đa **300 ký tự**/tin, hiển thị 80 tin gần nhất.
-- Ai cũng xoá được tin nhắn (nút ✕ hiện khi rê chuột, có xác nhận).
-- Cần chạy phần `MIGRATION: Chat nội bộ` trong `schema.sql` trước.
-
----
-
-## 4. Reset tháng
-
-Dữ liệu cũ **bị xóa hẳn**, không có trang history.
-
-- **Thủ công (khuyến nghị)**: trang `setup.html` → **Xóa toàn bộ đơn**.
-- **Tự động (tuỳ chọn)**: bật extension `pg_cron` rồi bỏ comment khối cuối
-  trong `supabase/schema.sql` (job chạy 1h sáng mỗi ngày, xóa đơn cũ hơn 31 ngày).
-  Free tier tùy project có thể không bật được — nếu lỗi thì dùng nút thủ công.
-
-> Lưu ý: nút "Xóa toàn bộ đơn" xóa **mọi đơn ở mọi ngày**, không chỉ đơn
-> của ngày hôm nay. Đó là hành vi mong muốn khi reset tháng.
-
----
-
-## 5. Deploy
-
-Đây là site tĩnh, deploy được ở bất kỳ static hosting nào.
-
-### GitHub Pages
-
-```powershell
-git init
-git add .
-git commit -m "Init dat com tool"
-git branch -M main
-git remote add origin https://github.com/<user>/<repo>.git
-git push -u origin main
-```
-
-GitHub → repo → **Settings → Pages** → Source: `Deploy from a branch`,
-Branch: `main` / `/ (root)` → Save. URL dạng `https://<user>.github.io/<repo>/`.
-
-### Netlify
-
-Kéo thả thư mục `D:\DatCom` vào <https://app.netlify.com/drop>. Không cần
-build command. (Nhớ đã điền `js/config.js` trước khi deploy.)
-
-> anon key nằm trong file public là **bình thường** với Supabase — nó không
-> phải secret, bảo mật do RLS quyết định.
-
----
-
-## 6. Cấu trúc file
+## Cấu trúc file
 
 ```
 index.html          trang đặt cơm
 setup.html          trang quản lý món + xóa dữ liệu
 css/style.css
 js/config.js        SUPABASE_URL, SUPABASE_ANON_KEY (điền tay)
-js/supabase-client.js
-js/app.js           đặt cơm (1 món/ngày) + list realtime + copy + vòng quay gợi ý + đánh giá món
-js/setup.js         CRUD món + upload ảnh + xóa dữ liệu
-js/placeholder.js   sinh ảnh placeholder từ tên món
-supabase/schema.sql bảng + RLS + bucket + realtime + seed
-supabase/mau-import-mon.csv  file CSV mẫu để tham khảo format
-README.md
+js/app.js           đặt cơm + list realtime + copy + vòng quay + đánh giá
+js/setup.js         CRUD món + upload ảnh + import CSV + xóa dữ liệu
+supabase/schema.sql bảng + RLS + bucket + realtime + seed + migrations
+docs/               tài liệu chi tiết
 ```
-
-Thư viện `@supabase/supabase-js` tải qua ESM CDN (`https://esm.sh/@supabase/supabase-js@2`),
-không cần `npm install`.
-
----
-
-## 7. Rủi ro & giới hạn đã chấp nhận
-
-- **Không có đăng nhập, không có mật khẩu.** Bất kỳ ai có link + anon key đều
-  đọc / thêm / xóa đơn, sửa món và đánh giá món. Chỉ chia sẻ trong nội bộ.
-  - **Mọi người xóa được đơn của người khác** (theo yêu cầu), có hộp thoại xác nhận.
-  - **Mọi người thêm/sửa/ẩn/xóa được món** ở `setup.html` — không có mật khẩu.
-  - Mọi người xem và xóa được đánh giá của nhau.
-- **"Hôm nay" tính theo giờ trình duyệt** của từng máy. Máy sai giờ hoặc múi giờ
-  khác sẽ thấy danh sách khác.
-- Không xuất file Word — chỉ **Copy** text.
-- Ảnh món do bất kỳ ai upload; nếu ai đó up ảnh quá lớn/xấu, sửa tay ở trang Setup.
-- Đánh giá không giới hạn số lần: một người có thể spam nhiều dòng cho cùng một món.
-- **Giới hạn 1 món/người/ngày được thực thi ở giao diện**, không phải ở database
-  (không có đăng nhập nên Postgres không biết "ai là ai"). Nếu ai đó gọi thẳng API
-  Supabase vẫn có thể tạo nhiều đơn; trang web sẽ đổi món (xóa đơn cũ của tên đó,
-  tạo đơn mới) khi người đó quyết định thay.
-
----
-
-## 8. Xử lý sự cố
-
-| Hiện tượng | Nguyên nhân / cách sửa |
-| --- | --- |
-| Banner "Chưa cấu hình Supabase" | Điền `SUPABASE_URL` + `SUPABASE_ANON_KEY` trong `js/config.js`, tải lại trang (Ctrl+F5). |
-| "Không kết nối được Supabase" | Sai URL/key, hoặc chưa chạy `schema.sql`. Xem Console trình duyệt (F12). |
-| Danh sách không tự cập nhật giữa các máy | Chưa bật realtime cho `orders` — chạy lại phần realtime trong `schema.sql`. |
-| Bấm ★ không thấy bình luận / lỗi `relation "reviews" does not exist` | Chưa chạy phần `MIGRATION: Đánh giá món` trong `schema.sql`. |
-| Chat báo "Chưa tạo bảng chat_messages" | Chưa chạy phần `MIGRATION: Chat nội bộ` trong `schema.sql`. |
-| Tin nhắn chat không hiện realtime giữa các máy | Bảng `chat_messages` chưa được thêm vào publication — chạy lại phần migration. |
-| Mũi tên vòng quay chỉ sai món | Đã sửa ở bản mới (gán transform một lần + chờ `transitionend`). Ctrl+F5 để lấy bản mới. |
-| Đánh giá không hiện realtime giữa các máy | Chưa thêm bảng `reviews` vào publication — chạy lại phần migration. |
-| Upload ảnh lỗi `new row violates row-level security` | Policy storage chưa có — chạy lại `schema.sql`. |
-| Ảnh upload xong nhưng không hiện | Bucket chưa public — trong Dashboard → Storage → `dish-images` → Public = on. |
-| Copy báo "Không copy được" | Trình duyệt chặn clipboard khi mở bằng `file://`; chạy qua `http://localhost` hoặc HTTPS. |
-| Danh sách trống dù vừa đặt | Máy đó có ngày khác (múi giờ) — kiểm tra đồng hồ hệ thống. |

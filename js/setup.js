@@ -25,6 +25,7 @@ const el = {
   dishName: $("dishName"),
   dishRestaurant: $("dishRestaurant"),
   dishSort: $("dishSort"),
+  dishIsNew: $("dishIsNew"),
   dishImage: $("dishImage"),
   previewThumb: $("previewThumb"),
   previewHint: $("previewHint"),
@@ -109,12 +110,24 @@ function renderRestaurantOptions() {
 async function loadDishes() {
   const { data, error } = await state.supabase
     .from("dishes")
-    .select("id, restaurant_id, name, image_url, is_available, sort_order, created_at")
+    .select("id, restaurant_id, name, image_url, is_available, is_new, sort_order, created_at")
+    .order("is_new", { ascending: false })
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) throw error;
   state.dishes = data || [];
   renderDishList();
+}
+
+/** Món NEW luôn đứng đầu, rồi tới sort_order, rồi created_at. */
+function sortDishes(list) {
+  return list.slice().sort((a, b) => {
+    if (Boolean(a.is_new) !== Boolean(b.is_new)) return a.is_new ? -1 : 1;
+    const sa = a.sort_order ?? 0;
+    const sb = b.sort_order ?? 0;
+    if (sa !== sb) return sa - sb;
+    return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+  });
 }
 
 /* ---------------- Render list ---------------- */
@@ -129,11 +142,14 @@ function renderDishList() {
   }
 
   const groups = state.restaurants
-    .map((r) => ({ restaurant: r, dishes: state.dishes.filter((d) => d.restaurant_id === r.id) }))
+    .map((r) => ({
+      restaurant: r,
+      dishes: sortDishes(state.dishes.filter((d) => d.restaurant_id === r.id)),
+    }))
     .filter((g) => g.dishes.length);
 
-  const orphaned = state.dishes.filter(
-    (d) => !state.restaurants.some((r) => r.id === d.restaurant_id)
+  const orphaned = sortDishes(
+    state.dishes.filter((d) => !state.restaurants.some((r) => r.id === d.restaurant_id))
   );
   if (orphaned.length) groups.push({ restaurant: { name: "Khác" }, dishes: orphaned });
 
@@ -150,7 +166,7 @@ function renderDishList() {
             <div class="placeholder"></div>
           </div>
           <div class="info">
-            <div class="title">${escapeHtml(d.name)}</div>
+            <div class="title">${escapeHtml(d.name)}${d.is_new ? '<span class="mini-new">NEW</span>' : ""}</div>
             <div class="sub">
               #${d.sort_order} · ${d.is_available ? "Đang bán" : "Tạm ẩn"}
             </div>
@@ -231,6 +247,7 @@ function resetForm() {
   state.currentImageUrl = null;
   el.dishForm.reset();
   el.dishSort.value = "0";
+  if (el.dishIsNew) el.dishIsNew.checked = false;
   el.formTitle.textContent = "Thêm món mới";
   el.submitBtn.textContent = "Thêm món";
   el.cancelEditBtn.classList.add("hidden");
@@ -247,6 +264,7 @@ function startEdit(id) {
   el.dishName.value = dish.name;
   el.dishRestaurant.value = dish.restaurant_id;
   el.dishSort.value = String(dish.sort_order ?? 0);
+  if (el.dishIsNew) el.dishIsNew.checked = Boolean(dish.is_new);
   el.dishImage.value = "";
   el.formTitle.textContent = "Sửa món";
   el.submitBtn.textContent = "Lưu thay đổi";
@@ -294,6 +312,7 @@ el.dishForm.addEventListener("submit", async (e) => {
   const name = el.dishName.value.trim();
   const restaurantId = el.dishRestaurant.value;
   const sortOrder = Number.parseInt(el.dishSort.value, 10) || 0;
+  const isNew = Boolean(el.dishIsNew && el.dishIsNew.checked);
 
   if (!name) return el.dishName.focus();
   if (!restaurantId) return toast("Chưa có quán nào để gán món.", "error");
@@ -317,14 +336,26 @@ el.dishForm.addEventListener("submit", async (e) => {
     if (state.editingId) {
       const { error } = await state.supabase
         .from("dishes")
-        .update({ name, restaurant_id: restaurantId, sort_order: sortOrder, image_url: imageUrl })
+        .update({
+          name,
+          restaurant_id: restaurantId,
+          sort_order: sortOrder,
+          image_url: imageUrl,
+          is_new: isNew,
+        })
         .eq("id", state.editingId);
       if (error) throw error;
       toast("Đã lưu thay đổi.", "success");
     } else {
       const { error } = await state.supabase
         .from("dishes")
-        .insert({ name, restaurant_id: restaurantId, sort_order: sortOrder, image_url: imageUrl });
+        .insert({
+          name,
+          restaurant_id: restaurantId,
+          sort_order: sortOrder,
+          image_url: imageUrl,
+          is_new: isNew,
+        });
       if (error) throw error;
       toast("Đã thêm món.", "success");
     }
@@ -707,6 +738,7 @@ async function importCsvRows() {
     sort_order: r.sortOrder,
     image_url: null,
     is_available: true,
+    is_new: false,
   }));
 
   try {

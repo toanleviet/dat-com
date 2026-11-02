@@ -22,7 +22,7 @@
       <div>
         <strong>Chưa cấu hình Supabase.</strong>
         Mở <code>js/config.js</code> và điền <code>SUPABASE_URL</code> +
-        <code>SUPABASE_ANON_KEY</code>. Hướng dẫn chi tiết trong <code>README.md</code>.
+        <code>SUPABASE_ANON_KEY</code>. Hướng dẫn chi tiết trong <code>docs/cai-dat.md</code>.
       </div>
     </div>
 
@@ -64,6 +64,12 @@
               <label for="dishSort">Thứ tự (nhỏ hiện trước)</label>
               <input id="dishSort" class="input" type="number" step="1" value="0" />
             </div>
+          </div>
+          <div class="field">
+            <label class="check-line">
+              <input id="dishIsNew" type="checkbox" />
+              <span>Món mới — gắn nhãn <b>NEW</b> và cho đứng đầu menu</span>
+            </label>
           </div>
           <div class="field">
             <label for="dishImage">Ảnh món (tối đa 2MB, JPG/PNG/WebP)</label>

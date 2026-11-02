@@ -264,6 +264,54 @@ button { font: inherit; cursor: pointer; }
 .dish-card:hover { box-shadow: var(--shadow); }
 .dish-card.selected { border-color: var(--success); box-shadow: 0 0 0 1px var(--success) inset; }
 
+/* ---------- Món NEW ---------- */
+
+@property --new-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.dish-card.is-new {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    conic-gradient(from var(--new-angle), #f43f5e, #f97316, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7, #f43f5e) border-box;
+  animation: new-border-spin 4s linear infinite;
+  box-shadow: 0 0 18px rgba(244, 63, 94, .28), 0 0 32px rgba(168, 85, 247, .18);
+}
+
+.dish-card.is-new.selected {
+  box-shadow: 0 0 0 2px var(--success), 0 0 18px rgba(244, 63, 94, .28);
+}
+
+@keyframes new-border-spin {
+  to { --new-angle: 360deg; }
+}
+
+.new-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: linear-gradient(120deg, #f43f5e, #f97316 40%, #a855f7);
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: .09em;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .8), 0 0 14px rgba(244, 63, 94, .75);
+  animation: new-badge-glow 1.8s ease-in-out infinite;
+}
+
+@keyframes new-badge-glow {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(255, 255, 255, .8), 0 0 10px rgba(244, 63, 94, .6); }
+  50% { box-shadow: 0 0 0 2px rgba(255, 255, 255, .95), 0 0 22px rgba(244, 63, 94, .95); }
+}
+
+.dish-card.is-new .dish-badge { top: auto; bottom: 8px; left: auto; right: 52px; }
+
 .dish-thumb {
   position: relative;
   width: 100%;
@@ -480,6 +528,8 @@ button { font: inherit; cursor: pointer; }
 .star-btn:active { transform: scale(.95); }
 .star-btn .star-icon { color: #fbbf24; font-size: .95rem; line-height: 1; }
 .star-btn .star-score { letter-spacing: .01em; }
+.star-btn .star-score.hidden { display: none; }
+.star-btn:not(.has-score) { padding: 5px; border-radius: 50%; }
 
 .modal-wide {
   max-width: 520px;
@@ -1163,6 +1213,35 @@ button { font: inherit; cursor: pointer; }
 .setup-dish .info .title { font-weight: 600; word-break: break-word; }
 .setup-dish .info .sub { font-size: .78rem; color: var(--muted); }
 
+.mini-new {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: linear-gradient(120deg, #f43f5e, #f97316 50%, #a855f7);
+  color: #fff;
+  font-size: .64rem;
+  font-weight: 900;
+  letter-spacing: .06em;
+  vertical-align: middle;
+}
+
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: .88rem;
+  cursor: pointer;
+}
+
+.check-line input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
 .setup-dish .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
 .preview-box {
@@ -1201,6 +1280,19 @@ button { font: inherit; cursor: pointer; }
 }
 
 .danger-zone h2 { color: var(--danger); }
+
+/* ---------- Giảm chuyển động ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .dish-card.is-new,
+  .new-badge { animation: none; }
+
+  .dish-card.is-new {
+    border: 2px solid #f43f5e;
+    background: var(--surface);
+    box-shadow: 0 0 12px rgba(244, 63, 94, .25);
+  }
+}
 
 /* ---------- Mobile ---------- */
 
