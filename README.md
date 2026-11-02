@@ -68,6 +68,8 @@ hoặc `npx serve` nếu không có Python.
 1. Lần đầu nhập tên (lưu vào `localStorage` key `dedatcom_person`, lần sau tự điền).
    Bấm chip tên trên header để đổi tên.
 2. Bấm **Menu Hải Nam** / **Menu Dejavu** → bấm **+** trên món để đặt.
+   - **Lọc món**: ô tìm kiếm phía trên danh sách món. Gõ "cơm" hoặc "com" (không dấu)
+     đều lọc đúng; `Esc` hoặc nút ✕ để xoá lọc. Bộ đếm hiện `3/6 món`.
    - **Mỗi người chỉ được chọn 1 món / ngày.** Đã chọn rồi mà bấm món khác sẽ hiện
      hộp thoại **"Bạn đã chọn món rồi"** với 2 nút **YES, đổi** / **NO, giữ**.
      YES → thay đơn cũ bằng món mới; NO → không đổi gì.
@@ -114,6 +116,15 @@ Danh sách chính chỉ hiển thị đơn của **ngày hiện tại theo giờ
   Không có ảnh → hiện placeholder gradient + chữ viết tắt tên món.
 - **Xóa toàn bộ đơn** — reset thủ công khi sang tháng mới: xác nhận 2 bước
   (confirm + gõ `XOA`).
+
+### Chat nội bộ
+
+- Panel **💬 Chat** nằm dưới **Đơn hôm nay** ở cột phải (mobile: cuối trang).
+- Mọi người dùng chung phòng chat theo link. Tin nhắn realtime, hiển thị tên người gửi,
+  giờ gửi; tin của bạn nằm bên phải, tin người khác bên trái.
+- Tối đa **300 ký tự**/tin, hiển thị 80 tin gần nhất.
+- Ai cũng xoá được tin nhắn (nút ✕ hiện khi rê chuột, có xác nhận).
+- Cần chạy phần `MIGRATION: Chat nội bộ` trong `schema.sql` trước.
 
 ---
 
@@ -206,6 +217,9 @@ không cần `npm install`.
 | "Không kết nối được Supabase" | Sai URL/key, hoặc chưa chạy `schema.sql`. Xem Console trình duyệt (F12). |
 | Danh sách không tự cập nhật giữa các máy | Chưa bật realtime cho `orders` — chạy lại phần realtime trong `schema.sql`. |
 | Bấm ★ không thấy bình luận / lỗi `relation "reviews" does not exist` | Chưa chạy phần `MIGRATION: Đánh giá món` trong `schema.sql`. |
+| Chat báo "Chưa tạo bảng chat_messages" | Chưa chạy phần `MIGRATION: Chat nội bộ` trong `schema.sql`. |
+| Tin nhắn chat không hiện realtime giữa các máy | Bảng `chat_messages` chưa được thêm vào publication — chạy lại phần migration. |
+| Mũi tên vòng quay chỉ sai món | Đã sửa ở bản mới (gán transform một lần + chờ `transitionend`). Ctrl+F5 để lấy bản mới. |
 | Đánh giá không hiện realtime giữa các máy | Chưa thêm bảng `reviews` vào publication — chạy lại phần migration. |
 | Upload ảnh lỗi `new row violates row-level security` | Policy storage chưa có — chạy lại `schema.sql`. |
 | Ảnh upload xong nhưng không hiện | Bucket chưa public — trong Dashboard → Storage → `dish-images` → Public = on. |

@@ -68,6 +68,14 @@
             <h2 id="dishSectionTitle">2. Chọn món</h2>
             <span class="small muted" id="dishCount"></span>
           </div>
+          <div class="dish-search">
+            <span class="dish-search-icon" aria-hidden="true">🔍</span>
+            <input id="dishSearch" class="input dish-search-input" type="search"
+                   placeholder="Lọc món... (VD: Cơm, gà, sườn)" autocomplete="off"
+                   aria-label="Lọc món theo tên" />
+            <button type="button" class="dish-search-clear hidden" id="dishSearchClear"
+                    aria-label="Xoá lọc">✕</button>
+          </div>
           <div id="dishArea">
             <div class="empty-state">Chọn menu ở trên để xem danh sách món.</div>
           </div>
@@ -90,6 +98,21 @@
           <p class="small muted" style="margin:8px 0 0">
             Ai cũng có thể xóa bất kỳ đơn nào. Bấm ★ trên món để xem đánh giá.
           </p>
+        </div>
+
+        <div class="card chat-card">
+          <div class="section-head">
+            <h2>💬 Chat</h2>
+            <span class="small muted" id="chatCount"></span>
+          </div>
+          <div class="chat-list" id="chatList"></div>
+          <div class="empty-state chat-empty" id="chatEmpty">Chưa có tin nhắn. Nói gì đó đi!</div>
+          <form class="chat-form" id="chatForm">
+            <input id="chatInput" class="input chat-input" type="text" maxlength="300"
+                   placeholder="Nhập tin nhắn..." autocomplete="off" />
+            <button type="submit" class="btn btn-primary chat-send" id="chatSendBtn"
+                    aria-label="Gửi">Gửi</button>
+          </form>
         </div>
       </aside>
     </div>

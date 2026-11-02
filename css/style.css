@@ -872,6 +872,130 @@ button { font: inherit; cursor: pointer; }
 .spin-result-name { font-weight: 800; font-size: 1.15rem; color: #fde68a; }
 .spin-result-sub { font-size: .88rem; color: #d8b4fe; }
 
+/* ---------- Lọc món ---------- */
+
+.dish-search {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.dish-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: .9rem;
+  opacity: .65;
+  pointer-events: none;
+}
+
+.dish-search-input {
+  padding-left: 36px;
+  padding-right: 36px;
+}
+
+.dish-search-input::-webkit-search-cancel-button { display: none; }
+
+.dish-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: #eef0f3;
+  color: var(--muted);
+  font-size: .75rem;
+  line-height: 1;
+}
+
+.dish-search-clear:hover { background: #e2e5ea; color: var(--text); }
+
+/* ---------- Chat ---------- */
+
+.chat-card { display: flex; flex-direction: column; }
+
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(42vh, 380px);
+  overflow-y: auto;
+  padding: 4px 2px;
+  scrollbar-width: thin;
+}
+
+.chat-empty { margin: 0 0 10px; padding: 16px 12px; }
+
+.chat-msg { display: flex; }
+.chat-msg.mine { justify-content: flex-end; }
+
+.chat-bubble {
+  max-width: 88%;
+  padding: 7px 10px 6px;
+  border-radius: 12px;
+  background: #f3f4f6;
+  border: 1px solid #e9eaee;
+  font-size: .88rem;
+  word-break: break-word;
+}
+
+.chat-msg.mine .chat-bubble {
+  background: var(--primary-soft);
+  border-color: #fbd0a8;
+}
+
+.chat-author {
+  font-weight: 700;
+  font-size: .78rem;
+  color: var(--primary);
+  margin-bottom: 2px;
+}
+
+.chat-text { white-space: pre-wrap; }
+
+.chat-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 2px;
+  font-size: .7rem;
+  color: var(--muted);
+}
+
+.chat-del {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: .7rem;
+  padding: 0 2px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity .12s;
+}
+
+.chat-msg:hover .chat-del { opacity: 1; }
+.chat-del:hover { color: var(--danger); }
+
+.chat-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chat-input { flex: 1; min-width: 0; }
+
+.chat-send {
+  flex: none;
+  padding: 9px 16px;
+  border-radius: 10px;
+}
+
 /* ---------- Toast ---------- */
 .toast-wrap {
   position: fixed;
@@ -998,6 +1122,7 @@ button { font: inherit; cursor: pointer; }
   .layout { grid-template-columns: 1fr; }
   .order-panel { position: static; }
   .order-list { max-height: none; }
+  .chat-list { max-height: 320px; }
 }
 
 @media (max-width: 520px) {

@@ -180,6 +180,44 @@ begin
   end if;
 end $$;
 
+-- =============================================================
+-- MIGRATION: Chat nội bộ
+-- Chạy phần dưới đây nếu đã có database từ phiên bản trước.
+-- Chạy lại nhiều lần vẫn an toàn.
+-- =============================================================
+
+create table if not exists public.chat_messages (
+  id          uuid primary key default gen_random_uuid(),
+  person_name text not null,
+  message     text not null,
+  created_at  timestamptz not null default now(),
+  constraint chat_person_len  check (char_length(person_name) between 1 and 40),
+  constraint chat_message_len check (char_length(message) between 1 and 300)
+);
+
+create index if not exists chat_created_idx on public.chat_messages (created_at desc);
+
+alter table public.chat_messages enable row level security;
+
+drop policy if exists "chat read"   on public.chat_messages;
+create policy "chat read"   on public.chat_messages for select to anon, authenticated using (true);
+
+drop policy if exists "chat insert" on public.chat_messages;
+create policy "chat insert" on public.chat_messages for insert to anon, authenticated with check (true);
+
+drop policy if exists "chat delete" on public.chat_messages;
+create policy "chat delete" on public.chat_messages for delete to anon, authenticated using (true);
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chat_messages'
+  ) then
+    execute 'alter publication supabase_realtime add table public.chat_messages';
+  end if;
+end $$;
+
 -- ---------- (Tuỳ chọn) Tự xóa đơn cũ hơn 31 ngày bằng pg_cron ----------
 -- Chỉ chạy nếu project hỗ trợ extension pg_cron. Nếu lỗi, bỏ qua phần này
 -- và dùng nút "Xóa toàn bộ đơn" ở trang setup.html.

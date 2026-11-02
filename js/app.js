@@ -22,6 +22,10 @@ const state = {
   selectedRating: 0,
   reviewBusy: false,
   allDishes: [],
+  dishFilter: "",
+  chat: [],
+  chatBusy: false,
+  chatOpen: true,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -38,6 +42,8 @@ const el = {
   dishSectionTitle: $("dishSectionTitle"),
   dishCount: $("dishCount"),
   dishArea: $("dishArea"),
+  dishSearch: $("dishSearch"),
+  dishSearchClear: $("dishSearchClear"),
   orderList: $("orderList"),
   orderEmpty: $("orderEmpty"),
   orderCount: $("orderCount"),
@@ -64,6 +70,12 @@ const el = {
   confirmMessage: $("confirmMessage"),
   confirmYes: $("confirmYes"),
   confirmNo: $("confirmNo"),
+  chatList: $("chatList"),
+  chatEmpty: $("chatEmpty"),
+  chatForm: $("chatForm"),
+  chatInput: $("chatInput"),
+  chatSendBtn: $("chatSendBtn"),
+  chatCount: $("chatCount"),
   spinFab: $("spinFab"),
   spinModal: $("spinModal"),
   spinCloseBtn: $("spinCloseBtn"),
@@ -206,6 +218,19 @@ el.nameForm.addEventListener("submit", (e) => {
 el.personChip.addEventListener("click", () => openNameModal());
 if (el.lockEnterBtn) el.lockEnterBtn.addEventListener("click", () => openNameModal());
 
+if (el.dishSearch) {
+  el.dishSearch.addEventListener("input", () => setDishFilter(el.dishSearch.value));
+  el.dishSearch.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setDishFilter("");
+  });
+}
+if (el.dishSearchClear) {
+  el.dishSearchClear.addEventListener("click", () => {
+    setDishFilter("");
+    if (el.dishSearch) el.dishSearch.focus();
+  });
+}
+
 /* ---------------- Data loading ---------------- */
 
 async function loadRestaurants() {
@@ -331,12 +356,26 @@ async function refreshActiveDishes() {
   el.dishArea.innerHTML = '<div class="empty-state">Đang tải món...</div>';
   try {
     state.dishes = await loadDishes(id);
+    state.dishFilter = "";
+    if (el.dishSearch) el.dishSearch.value = "";
+    if (el.dishSearchClear) el.dishSearchClear.classList.add("hidden");
     await loadReviewStats(state.dishes.map((d) => d.id));
     renderDishes();
   } catch (err) {
     el.dishArea.innerHTML = "";
     showError("Không tải được danh sách món.", err.message || String(err));
   }
+}
+
+function setDishFilter(value) {
+  state.dishFilter = String(value || "");
+  if (el.dishSearch && el.dishSearch.value !== state.dishFilter) {
+    el.dishSearch.value = state.dishFilter;
+  }
+  if (el.dishSearchClear) {
+    el.dishSearchClear.classList.toggle("hidden", !state.dishFilter);
+  }
+  if (state.dishes.length) renderDishes();
 }
 
 function starGlyph(filled) {
@@ -350,12 +389,48 @@ function starString(rating, max = 5) {
   return out;
 }
 
+function normalizeSearch(str) {
+  return String(str || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .trim();
+}
+
+function filteredDishes() {
+  const q = normalizeSearch(state.dishFilter);
+  if (!q) return state.dishes;
+  const terms = q.split(/\s+/).filter(Boolean);
+  return state.dishes.filter((d) => {
+    const hay = normalizeSearch(d.name);
+    return terms.every((t) => hay.includes(t));
+  });
+}
+
 function renderDishes() {
-  const list = state.dishes;
-  el.dishCount.textContent = list.length ? `${list.length} món` : "";
-  if (!list.length) {
+  const all = state.dishes;
+  const list = filteredDishes();
+  const hasFilter = Boolean(normalizeSearch(state.dishFilter));
+
+  if (!all.length) {
+    el.dishCount.textContent = "";
     el.dishArea.innerHTML =
       '<div class="empty-state">Quán này chưa có món nào. Vào <a href="setup.html">Quản lý món</a> để thêm.</div>';
+    return;
+  }
+
+  el.dishCount.textContent = hasFilter
+    ? `${list.length}/${all.length} món`
+    : `${all.length} món`;
+
+  if (!list.length) {
+    el.dishArea.innerHTML = `<div class="empty-state">
+      Không tìm thấy món nào khớp "<b>${escapeHtml(state.dishFilter.trim())}</b>".
+      <button type="button" class="btn btn-ghost btn-sm" data-clear-filter>Xoá lọc</button>
+    </div>`;
+    const inlineClear = el.dishArea.querySelector("[data-clear-filter]");
+    if (inlineClear) inlineClear.addEventListener("click", () => setDishFilter(""));
     return;
   }
 
@@ -595,7 +670,13 @@ if (el.confirmModal) {
 
 /* ---------------- Lucky spin: gợi ý món ---------------- */
 
-const spinState = { angle: 0, spinning: false, pendingDish: null, resolve: null };
+const spinState = {
+  angle: 0,
+  targetAngle: 0,
+  spinning: false,
+  pendingDish: null,
+  resolve: null,
+};
 
 const SPIN_COLORS = [
   "#ff6b6b", "#f59e0b", "#22c55e", "#3b82f6",
@@ -697,13 +778,57 @@ function renderWheelRotation() {
   }
 }
 
-function pickSpinDish(items) {
+const SPIN_TURNS_MIN = 5;
+const SPIN_TURNS_MAX = 8;
+const SPIN_DURATION_MS = 3800;
+
+/**
+ * Chọn ngẫu nhiên món đích và tính góc quay cuối cùng (tuyệt đối).
+ * Mũi tên nằm ở ĐỈNH bánh xe (12 giờ). Slice i chiếm góc [i*s, (i+1)*s]
+ * tính từ 12 giờ theo chiều kim đồng hồ (khi chưa xoay).
+ * Để slice `target` nằm dưới mũi tên sau khi xoay θ (CSS rotate, chiều kim đồng hồ):
+ *   θ ≡ -midDeg(target)   (mod 360)
+ */
+function computeSpinTarget(items) {
   const n = items.length;
   const sliceDeg = 360 / n;
-  const normalized = ((-spinState.angle % 360) + 360) % 360;
-  const index = Math.floor(normalized / sliceDeg) % n;
-  return { dish: items[index], index };
+  const targetIndex = Math.floor(Math.random() * n);
+  const midDeg = (targetIndex + 0.5) * sliceDeg;
+  // Random trong 55% giữa ô để mũi tên không dính sát vạch chia.
+  const offset = (Math.random() - 0.5) * sliceDeg * 0.55;
+
+  const current = spinState.angle;
+  const desired = -(midDeg + offset);
+  const turns = SPIN_TURNS_MIN + Math.floor(Math.random() * (SPIN_TURNS_MAX - SPIN_TURNS_MIN + 1));
+  // Luôn quay thêm (theo chiều dương) đủ nhiều vòng so với góc hiện tại.
+  const delta = (((desired - current) % 360) + 360) % 360 + turns * 360;
+  const finalAngle = current + delta;
+
+  return { targetIndex, finalAngle, sliceDeg };
 }
+function waitSpinSettled() {
+  const wheel = el.spinWheelInner;
+  if (!wheel) {
+    return new Promise((resolve) => setTimeout(resolve, SPIN_DURATION_MS));
+  }
+  return new Promise((resolve) => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      wheel.removeEventListener("transitionend", handler);
+      resolve();
+    };
+    const handler = (e) => {
+      if (e.propertyName !== "transform") return;
+      finish();
+    };
+    const timer = setTimeout(finish, SPIN_DURATION_MS + 1200);
+    wheel.addEventListener("transitionend", handler);
+  });
+}
+
 
 async function ensureSpinPool() {
   if (state.allDishes && state.allDishes.length) return state.allDishes;
@@ -793,24 +918,15 @@ async function spinWheel() {
   el.spinResultCard.innerHTML = "";
   el.spinDishName.textContent = "Quay... may mắn nào!";
 
-  const n = items.length;
-  const sliceDeg = 360 / n;
-  const targetIndex = Math.floor(Math.random() * n);
-  const jitter = (Math.random() - 0.5) * sliceDeg * 0.55;
-  const currentNormalized = ((-spinState.angle % 360) + 360) % 360;
-  const currentIndex = currentNormalized / sliceDeg;
-  const turns = 5 + Math.floor(Math.random() * 3);
-  const extraSlices = (targetIndex - currentIndex + n) % n;
-  spinState.angle -= turns * 360;
+  const { targetIndex, finalAngle } = computeSpinTarget(items);
+  spinState.targetAngle = finalAngle;
 
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      spinState.angle -= extraSlices * sliceDeg + jitter;
-      renderWheelRotation();
-    });
-  });
+  // Một lần gán duy nhất: để transition chạy từ angle hiện tại -> finalAngle.
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  spinState.angle = finalAngle;
+  renderWheelRotation();
 
-  await new Promise((resolve) => setTimeout(resolve, 3700));
+  await waitSpinSettled();
 
   const dish = items[targetIndex];
   spinState.spinning = false;
@@ -1091,6 +1207,132 @@ async function deleteReview(reviewId) {
   toast("Đã xóa đánh giá.", "success");
 }
 
+/* ---------------- Chat ---------------- */
+
+const CHAT_MAX_LEN = 300;
+const CHAT_PAGE = 80;
+
+async function loadChat() {
+  const client = state.supabase;
+  if (!client) return;
+  const { data, error } = await client
+    .from("chat_messages")
+    .select("id, person_name, message, created_at")
+    .order("created_at", { ascending: false })
+    .limit(CHAT_PAGE);
+
+  if (error) throw error;
+  state.chat = (data || []).slice().reverse();
+  renderChat({ scroll: true });
+}
+
+function renderChat({ scroll = false } = {}) {
+  if (!el.chatList) return;
+  const rows = state.chat;
+  if (el.chatCount) {
+    el.chatCount.textContent = rows.length ? `${rows.length} tin` : "";
+  }
+
+  if (!rows.length) {
+    el.chatList.innerHTML = "";
+    if (el.chatEmpty) el.chatEmpty.classList.remove("hidden");
+    return;
+  }
+  if (el.chatEmpty) el.chatEmpty.classList.add("hidden");
+
+  el.chatList.innerHTML = rows
+    .map((m) => {
+      const mine = state.person && m.person_name === state.person;
+      const when = new Date(m.created_at).toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      return `
+      <div class="chat-msg${mine ? " mine" : ""}" data-id="${escapeHtml(m.id)}">
+        <div class="chat-bubble">
+          ${mine ? "" : `<div class="chat-author">${escapeHtml(m.person_name)}</div>`}
+          <div class="chat-text">${escapeHtml(m.message)}</div>
+          <div class="chat-meta">
+            <span>${escapeHtml(when)}</span>
+            <button type="button" class="chat-del" data-chatdel="${escapeHtml(
+              m.id
+            )}" title="Xoá tin nhắn" aria-label="Xoá tin nhắn">✕</button>
+          </div>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  el.chatList.querySelectorAll("[data-chatdel]").forEach((btn) => {
+    btn.addEventListener("click", () => deleteChat(btn.dataset.chatdel));
+  });
+
+  if (scroll) {
+    requestAnimationFrame(() => {
+      el.chatList.scrollTop = el.chatList.scrollHeight;
+    });
+  }
+}
+
+async function sendChat() {
+  if (!el.chatInput || state.chatBusy) return;
+  if (!state.person) {
+    openNameModal();
+    return;
+  }
+  const text = el.chatInput.value.trim().slice(0, CHAT_MAX_LEN);
+  if (!text) return;
+  if (!state.supabase) {
+    toast("Chưa kết nối được Supabase.", "error");
+    return;
+  }
+
+  state.chatBusy = true;
+  if (el.chatSendBtn) el.chatSendBtn.disabled = true;
+
+  const { data, error } = await state.supabase
+    .from("chat_messages")
+    .insert({ person_name: state.person, message: text })
+    .select("id, person_name, message, created_at")
+    .single();
+
+  state.chatBusy = false;
+  if (el.chatSendBtn) el.chatSendBtn.disabled = false;
+
+  if (error) {
+    toast("Không gửi được tin nhắn: " + error.message, "error");
+    return;
+  }
+
+  el.chatInput.value = "";
+  if (!state.chat.some((m) => m.id === data.id)) {
+    state.chat.push(data);
+    renderChat({ scroll: true });
+  }
+  el.chatInput.focus();
+}
+
+async function deleteChat(id) {
+  const msg = state.chat.find((m) => m.id === id);
+  if (!msg) return;
+  if (!window.confirm(`Xoá tin nhắn của ${msg.person_name}?`)) return;
+
+  const { error } = await state.supabase.from("chat_messages").delete().eq("id", id);
+  if (error) {
+    toast("Không xoá được: " + error.message, "error");
+    return;
+  }
+  state.chat = state.chat.filter((m) => m.id !== id);
+  renderChat();
+}
+
+if (el.chatForm) {
+  el.chatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendChat();
+  });
+}
+
 /* ---------------- Render: order list ---------------- */
 
 function renderOrders() {
@@ -1253,6 +1495,24 @@ function subscribeRealtime() {
         refreshStarBadges();
       }
     )
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "chat_messages" },
+      ({ new: row }) => {
+        if (state.chat.some((m) => m.id === row.id)) return;
+        state.chat.push(row);
+        renderChat({ scroll: true });
+      }
+    )
+    .on(
+      "postgres_changes",
+      { event: "DELETE", schema: "public", table: "chat_messages" },
+      ({ old: row }) => {
+        if (!state.chat.some((m) => m.id === row.id)) return;
+        state.chat = state.chat.filter((m) => m.id !== row.id);
+        renderChat();
+      }
+    )
     .subscribe();
 }
 
@@ -1262,6 +1522,16 @@ async function loadAll() {
   hideError();
   try {
     await Promise.all([loadRestaurants(), loadOrders()]);
+    try {
+      await loadChat();
+    } catch {
+      /* bảng chat_messages có thể chưa được tạo — không chặn trang */
+      if (el.chatEmpty) {
+        el.chatEmpty.textContent =
+          "Chưa tạo bảng chat_messages — chạy phần MIGRATION: Chat trong schema.sql.";
+        el.chatEmpty.classList.remove("hidden");
+      }
+    }
     if (state.restaurants.length) {
       const keep = state.restaurants.some((r) => r.id === state.activeRestaurantId);
       if (!keep) await selectRestaurant(state.restaurants[0].id);
