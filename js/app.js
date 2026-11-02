@@ -831,6 +831,8 @@ window.addEventListener("resize", () => {
 });
 
 /* ---------------- Reviews: modal ---------------- */
+
+function renderStarInput() {
   el.reviewStarsInput.querySelectorAll(".rate-star").forEach((btn) => {
     const value = Number(btn.dataset.value);
     const on = value <= state.selectedRating;
@@ -1028,27 +1030,6 @@ async function deleteReview(reviewId) {
   renderReviews();
   refreshStarBadges();
   toast("Đã xóa đánh giá.", "success");
-}
-
-function refreshMineUI() {
-  el.dishArea.querySelectorAll("[data-add]").forEach((btn) => {
-    const dishId = btn.dataset.add;
-    const mine = state.orders.some(
-      (o) => o.dish_id === dishId && o.person_name === state.person && isMine(o.id)
-    );
-    const busy = state.pendingDishIds.has(dishId);
-    btn.disabled = mine || busy || !state.person;
-    btn.classList.toggle("done", mine);
-    btn.textContent = mine ? "✓" : busy ? "…" : "+";
-
-    const card = btn.closest(".dish-card");
-    if (card) {
-      card.classList.toggle("selected", mine);
-      const badge = card.querySelector(".dish-badge");
-      if (badge) badge.classList.toggle("hidden", !mine);
-    }
-  });
-  renderOrders();
 }
 
 /* ---------------- Render: order list ---------------- */
