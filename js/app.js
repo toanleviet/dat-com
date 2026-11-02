@@ -73,6 +73,8 @@ const el = {
   spinDishName: $("spinDishName"),
   spinResult: $("spinResult"),
   spinResultCard: $("spinResultCard"),
+  spinYesBtn: $("spinYesBtn"),
+  spinNoBtn: $("spinNoBtn"),
   mainContent: $("mainContent"),
   lockNotice: $("lockNotice"),
   lockEnterBtn: $("lockEnterBtn"),
@@ -593,7 +595,7 @@ if (el.confirmModal) {
 
 /* ---------------- Lucky spin: gợi ý món ---------------- */
 
-const spinState = { angle: 0, spinning: false, cooldown: 0 };
+const spinState = { angle: 0, spinning: false, pendingDish: null, resolve: null };
 
 const SPIN_COLORS = [
   "#ff6b6b", "#f59e0b", "#22c55e", "#3b82f6",
@@ -601,25 +603,31 @@ const SPIN_COLORS = [
   "#84cc16", "#6366f1",
 ];
 
-function wheelLabel(name) {
-  const text = String(name || "");
-  return text.length > 22 ? text.slice(0, 21) + "…" : text;
+function wheelLabel(name, maxWidth, fontSize) {
+  const text = String(name || "").trim();
+  if (!maxWidth) return text.length > 22 ? text.slice(0, 21) + "…" : text;
+
+  const perChar = fontSize * 0.56;
+  const fit = Math.max(4, Math.floor(maxWidth / perChar));
+  if (text.length <= fit) return text;
+  return text.slice(0, Math.max(1, fit - 1)).trimEnd() + "…";
 }
 
 function drawWheel(items) {
   if (!el.spinCanvas) return;
   const canvas = el.spinCanvas;
-  const size = canvas.clientWidth || 300;
+  const size = Math.round(canvas.clientWidth || 420);
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = size * dpr;
-  canvas.height = size * dpr;
+  canvas.width = Math.round(size * dpr);
+  canvas.height = Math.round(size * dpr);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, size, size);
 
   const cx = size / 2;
   const cy = size / 2;
-  const r = size / 2 - 6;
+  const hubR = Math.max(30, size * 0.13);
+  const r = size / 2 - 3;
 
   if (!items.length) {
     ctx.fillStyle = "#f3f4f6";
@@ -646,25 +654,36 @@ function drawWheel(items) {
     ctx.closePath();
     ctx.fillStyle = SPIN_COLORS[i % SPIN_COLORS.length];
     ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,.85)";
+    ctx.strokeStyle = "rgba(255,255,255,.9)";
     ctx.lineWidth = 1.5;
     ctx.stroke();
+  }
 
+  const usable = r - hubR - Math.max(12, size * 0.03);
+  const fontByArc = (slice * r) / 2.2;
+  const fontByRadius = usable / 9;
+  const fontSize = Math.round(
+    Math.max(9, Math.min(size / 13, fontByArc, fontByRadius))
+  );
+
+  for (let i = 0; i < n; i++) {
+    const mid = i * slice - Math.PI / 2 + slice / 2;
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(start + slice / 2);
+    ctx.rotate(mid);
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#fff";
-    ctx.font = `700 ${Math.max(10, Math.round(size / (n > 12 ? 26 : 20)))}px system-ui, sans-serif`;
-    ctx.shadowColor = "rgba(0,0,0,.25)";
+    ctx.font = `700 ${fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+    ctx.shadowColor = "rgba(0,0,0,.35)";
     ctx.shadowBlur = 3;
-    ctx.fillText(wheelLabel(items[i].name), r - 14, 0);
+    ctx.shadowOffsetY = 1;
+    ctx.fillText(wheelLabel(items[i].name, usable, fontSize), r - Math.max(10, size * 0.025), 0);
     ctx.restore();
   }
 
   ctx.beginPath();
-  ctx.arc(cx, cy, Math.max(20, size * 0.1), 0, Math.PI * 2);
+  ctx.arc(cx, cy, hubR, 0, Math.PI * 2);
   ctx.fillStyle = "#fff";
   ctx.fill();
   ctx.strokeStyle = "#e5e7eb";
@@ -704,8 +723,7 @@ async function openSpinModal() {
     return;
   }
   el.spinModal.classList.remove("hidden");
-  el.spinResult.classList.add("hidden");
-  el.spinResultCard.innerHTML = "";
+  resetSpinView();
   el.spinDishName.textContent = "Đang chuẩn bị món...";
   setSpinButton(true);
 
@@ -727,6 +745,13 @@ async function openSpinModal() {
   el.spinDishName.textContent = "Bấm QUAY để xem vận may!";
 }
 
+function resetSpinView() {
+  spinState.pendingDish = null;
+  resolveSpinDecision(null);
+  el.spinResult.classList.add("hidden");
+  el.spinResultCard.innerHTML = "";
+}
+
 function setSpinButton(busy) {
   if (!el.spinGoBtn) return;
   el.spinGoBtn.disabled = busy || spinState.spinning;
@@ -734,8 +759,21 @@ function setSpinButton(busy) {
   el.spinGoBtn.textContent = busy || spinState.spinning ? "Đang quay..." : "QUAY NGAY";
 }
 
+function resolveSpinDecision(answer) {
+  const resolve = spinState.resolve;
+  spinState.resolve = null;
+  if (resolve) resolve(answer);
+}
+
+function waitSpinDecision() {
+  return new Promise((resolve) => {
+    spinState.resolve = resolve;
+  });
+}
+
 function closeSpinModal() {
   if (spinState.spinning) return;
+  resolveSpinDecision(null);
   el.spinModal.classList.add("hidden");
 }
 
@@ -748,9 +786,11 @@ async function spinWheel() {
   }
   if (state.pendingDishIds.size) return;
 
+  resolveSpinDecision(null);
   spinState.spinning = true;
   setSpinButton(true);
   el.spinResult.classList.add("hidden");
+  el.spinResultCard.innerHTML = "";
   el.spinDishName.textContent = "Quay... may mắn nào!";
 
   const n = items.length;
@@ -774,6 +814,7 @@ async function spinWheel() {
 
   const dish = items[targetIndex];
   spinState.spinning = false;
+  spinState.pendingDish = dish;
   setSpinButton(false);
 
   el.spinDishName.textContent = "Món dành cho bạn là...";
@@ -791,18 +832,12 @@ async function spinWheel() {
     ? `Menu ${restaurant.name}`
     : "";
   el.spinResult.classList.remove("hidden");
+  scrollSpinResultIntoView();
 
-  const yes = await askConfirm({
-    title: `Bạn muốn chọn "${dish.name}" chứ?`,
-    message: restaurant
-      ? `Món từ menu ${restaurant.name}. Chọn YES để đặt ngay.`
-      : "Chọn YES để đặt ngay.",
-    yesLabel: "YES, chốt món",
-    noLabel: "NO, quay lại",
-  });
-
+  const yes = await waitSpinDecision();
   if (!yes) {
-    el.spinDishName.textContent = "Không sao, quay tiếp khi bạn muốn!";
+    el.spinResult.classList.add("hidden");
+    el.spinDishName.textContent = "Chưa ưng? Bấm QUAY NGAY để thử lại!";
     return;
   }
 
@@ -826,9 +861,22 @@ async function spinWheel() {
   }
 }
 
+function scrollSpinResultIntoView() {
+  if (!el.spinResult) return;
+  requestAnimationFrame(() => {
+    try {
+      el.spinResult.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    } catch {
+      el.spinResult.scrollIntoView(false);
+    }
+  });
+}
+
 if (el.spinFab) el.spinFab.addEventListener("click", () => openSpinModal());
 if (el.spinGoBtn) el.spinGoBtn.addEventListener("click", () => spinWheel());
 if (el.spinCloseBtn) el.spinCloseBtn.addEventListener("click", () => closeSpinModal());
+if (el.spinYesBtn) el.spinYesBtn.addEventListener("click", () => resolveSpinDecision(true));
+if (el.spinNoBtn) el.spinNoBtn.addEventListener("click", () => resolveSpinDecision(false));
 if (el.spinModal) {
   el.spinModal.addEventListener("click", (e) => {
     if (e.target === el.spinModal) closeSpinModal();

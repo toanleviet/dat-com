@@ -128,15 +128,12 @@
 
   <div class="modal-backdrop hidden" id="spinModal">
     <div class="modal modal-spin" role="dialog" aria-modal="true" aria-label="Gợi ý món">
-      <div class="modal-head">
-        <div>
-          <p class="small" style="margin:0;color:#a78bfa;font-weight:700;letter-spacing:.08em">LUCKY FOOD</p>
-          <h2>Hôm nay ăn gì?</h2>
-        </div>
-        <button type="button" class="btn btn-ghost btn-sm" id="spinCloseBtn" aria-label="Đóng">✕</button>
-      </div>
+      <button type="button" class="spin-close" id="spinCloseBtn" aria-label="Đóng">✕</button>
 
-      <div class="spin-dish-name" id="spinDishName">Bấm QUAY để xem vận may!</div>
+      <div class="spin-header">
+        <p class="spin-kicker">LUCKY FOOD</p>
+        <h2>Hôm nay ăn gì?</h2>
+      </div>
 
       <div class="spin-stage">
         <div class="spin-pointer" aria-hidden="true"></div>
@@ -146,8 +143,14 @@
         <button type="button" class="spin-go" id="spinGoBtn">QUAY NGAY</button>
       </div>
 
+      <div class="spin-dish-name" id="spinDishName">Bấm QUAY để xem vận may!</div>
+
       <div class="spin-result hidden" id="spinResult">
         <div class="spin-result-card" id="spinResultCard"></div>
+        <div class="spin-result-actions" id="spinResultActions">
+          <button type="button" class="btn btn-yes" id="spinYesBtn">YES, chốt món</button>
+          <button type="button" class="btn btn-no" id="spinNoBtn">NO, quay lại</button>
+        </div>
       </div>
     </div>
   </div>
