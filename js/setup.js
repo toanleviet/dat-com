@@ -9,6 +9,8 @@ const state = {
   editingId: null,
   pendingImageFile: null,
   currentImageUrl: null,
+  csvRows: [],
+  csvBusy: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -32,6 +34,14 @@ const el = {
   dishManageArea: $("dishManageArea"),
   purgeBtn: $("purgeBtn"),
   toastWrap: $("toastWrap"),
+  csvFile: $("csvFile"),
+  csvPreview: $("csvPreview"),
+  csvSummary: $("csvSummary"),
+  csvRows: $("csvRows"),
+  csvImportBtn: $("csvImportBtn"),
+  csvClearBtn: $("csvClearBtn"),
+  csvEmpty: $("csvEmpty"),
+  csvCount: $("csvCount"),
 };
 
 /* ---------------- Helpers ---------------- */
@@ -358,6 +368,386 @@ async function deleteDish(id) {
   if (state.editingId === id) resetForm();
   toast("Đã xóa món.", "success");
   await loadDishes();
+}
+
+/* ---------------- Import CSV ---------------- */
+
+const CSV_MAX_BYTES = 1024 * 1024;
+const CSV_MAX_ROWS = 500;
+const DISH_NAME_MAX = 80;
+
+/**
+ * Bộ đọc CSV theo RFC 4180: hỗ trợ bọc ngoặc kép, "" để escape, xuống dòng trong ô.
+ * Tự nhận diện dấu phân cách (dấu phẩy / chấm phẩy / tab) trên dòng đầu.
+ */
+function parseCsv(text) {
+  const src = String(text || "").replace(/^\uFEFF/, "");
+
+  const firstLine = src.split(/\r?\n/)[0] || "";
+  const delimiter = [";", "\t", ","].reduce((best, d) => {
+    const count = firstLine.split(d).length - 1;
+    return count > (firstLine.split(best).length - 1) ? d : best;
+  }, ",");
+
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < src.length) {
+    const ch = src[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i++;
+        continue;
+      }
+      field += ch;
+      i++;
+      continue;
+    }
+
+    if (ch === '"' && field.trim() === "") {
+      inQuotes = true;
+      field = "";
+      i++;
+      continue;
+    }
+    if (ch === delimiter) {
+      row.push(field);
+      field = "";
+      i++;
+      continue;
+    }
+    if (ch === "\r") {
+      i++;
+      continue;
+    }
+    if (ch === "\n") {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+      i++;
+      continue;
+    }
+    field += ch;
+    i++;
+  }
+
+  if (field.length || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return { rows, delimiter };
+}
+
+function normHeader(str) {
+  return String(str || "")
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+const HEADER_ALIASES = {
+  restaurant: ["restaurant", "restaurants", "quan", "ten quan", "menu", "cua hang"],
+  name: ["name", "dish", "dish_name", "mon", "ten mon", "ten"],
+};
+
+function matchColumn(headerCell) {
+  const h = normHeader(headerCell).replace(/\s+/g, " ");
+  for (const [key, aliases] of Object.entries(HEADER_ALIASES)) {
+    if (aliases.includes(h)) return key;
+  }
+  return null;
+}
+
+function buildRestaurantLookup() {
+  const map = new Map();
+  for (const r of state.restaurants) {
+    map.set(normHeader(r.name).replace(/\s+/g, " "), r);
+  }
+  return map;
+}
+
+function existingDishKeys() {
+  const set = new Set();
+  const byId = new Map(state.restaurants.map((r) => [r.id, r]));
+  for (const d of state.dishes) {
+    const r = byId.get(d.restaurant_id);
+    const rkey = r ? normHeader(r.name) : "";
+    set.add(rkey + "\u0000" + normHeader(d.name).replace(/\s+/g, " "));
+  }
+  return set;
+}
+
+function analyzeCsv(text) {
+  const { rows, delimiter } = parseCsv(text);
+  const errors = [];
+  const result = {
+    delimiter,
+    rows: [],
+    validCount: 0,
+    duplicateCount: 0,
+    errorCount: 0,
+  };
+
+  if (!rows.length) {
+    errors.push("File trống.");
+    return { ...result, errors };
+  }
+
+  const header = rows[0];
+  const colIndex = { restaurant: -1, name: -1 };
+  header.forEach((cell, idx) => {
+    const key = matchColumn(cell);
+    if (key && colIndex[key] === -1) colIndex[key] = idx;
+  });
+
+  if (colIndex.restaurant === -1 || colIndex.name === -1) {
+    errors.push(
+      `Dòng đầu phải là header có 2 cột "restaurant" và "name" (tìm thấy: ${
+        header.map((h) => `"${h.trim()}"`).join(", ") || "trống"
+      }).`
+    );
+    return { ...result, errors };
+  }
+
+  const dataRows = rows.slice(1).filter((r) => r.some((c) => String(c).trim() !== ""));
+  if (!dataRows.length) {
+    errors.push("Header đúng nhưng không có dòng dữ liệu nào.");
+    return { ...result, errors };
+  }
+  if (dataRows.length > CSV_MAX_ROWS) {
+    errors.push(`File có ${dataRows.length} dòng, vượt giới hạn ${CSV_MAX_ROWS} dòng/lần.`);
+    return { ...result, errors };
+  }
+
+  const restaurantMap = buildRestaurantLookup();
+  const seenKeys = existingDishKeys();
+  const nextSort = new Map();
+  for (const r of state.restaurants) {
+    const max = state.dishes
+      .filter((d) => d.restaurant_id === r.id)
+      .reduce((m, d) => Math.max(m, d.sort_order || 0), 0);
+    nextSort.set(r.id, max);
+  }
+  const queuedSort = new Map();
+
+  dataRows.forEach((cells, i) => {
+    const lineNo = i + 2;
+    const rawRestaurant = String(cells[colIndex.restaurant] ?? "").trim();
+    const rawName = String(cells[colIndex.name] ?? "").trim().replace(/\s+/g, " ");
+
+    const item = {
+      lineNo,
+      restaurantName: rawRestaurant,
+      name: rawName,
+      status: "ok",
+      message: "",
+      restaurantId: null,
+      sortOrder: 0,
+    };
+
+    if (!rawRestaurant) {
+      item.status = "error";
+      item.message = "Thiếu tên quán";
+    } else if (!rawName) {
+      item.status = "error";
+      item.message = "Thiếu tên món";
+    } else if (rawName.length > DISH_NAME_MAX) {
+      item.status = "error";
+      item.message = `Tên món dài hơn ${DISH_NAME_MAX} ký tự`;
+    } else {
+      const r = restaurantMap.get(normHeader(rawRestaurant).replace(/\s+/g, " "));
+      if (!r) {
+        item.status = "error";
+        item.message = `Không có quán "${rawRestaurant}"`;
+      } else {
+        item.restaurantId = r.id;
+        const key = normHeader(r.name) + "\u0000" + normHeader(rawName).replace(/\s+/g, " ");
+        if (seenKeys.has(key)) {
+          item.status = "duplicate";
+          item.message = "Đã có món này trong quán";
+        } else {
+          seenKeys.add(key);
+          const base = nextSort.get(r.id) || 0;
+          const offset = (queuedSort.get(r.id) || 0) + 1;
+          queuedSort.set(r.id, offset);
+          item.sortOrder = base + offset;
+          item.status = "ok";
+        }
+      }
+    }
+
+    if (item.status === "ok") result.validCount++;
+    else if (item.status === "duplicate") result.duplicateCount++;
+    else result.errorCount++;
+
+    result.rows.push(item);
+  });
+
+  return { ...result, errors };
+}
+
+function renderCsvPreview() {
+  const rows = state.csvRows;
+  const valid = rows.filter((r) => r.status === "ok");
+
+  if (el.csvCount) el.csvCount.textContent = rows.length ? `${valid.length} món mới` : "";
+  if (el.csvEmpty) el.csvEmpty.classList.add("hidden");
+  if (el.csvPreview) el.csvPreview.classList.remove("hidden");
+
+  const dups = rows.filter((r) => r.status === "duplicate").length;
+  const errs = rows.filter((r) => r.status === "error").length;
+  const parts = [`<b>${valid.length}</b> món sẽ được thêm`];
+  if (dups) parts.push(`${dups} món trùng (bỏ qua)`);
+  if (errs) parts.push(`<span class="csv-err">${errs} dòng lỗi</span>`);
+  el.csvSummary.innerHTML = parts.join(" · ");
+
+  const LABEL = {
+    ok: "Sẽ thêm",
+    duplicate: "Bỏ qua (trùng)",
+    error: "Lỗi",
+  };
+
+  el.csvRows.innerHTML = rows
+    .map(
+      (r) => `
+      <tr class="csv-row-${r.status}">
+        <td class="csv-line">${r.lineNo}</td>
+        <td>${escapeHtml(r.restaurantName || "—")}</td>
+        <td>${escapeHtml(r.name || "—")}</td>
+        <td>
+          <span class="csv-status csv-${r.status}">${LABEL[r.status]}</span>
+          ${r.message ? `<span class="csv-msg">${escapeHtml(r.message)}</span>` : ""}
+        </td>
+      </tr>`
+    )
+    .join("");
+
+  el.csvImportBtn.disabled = valid.length === 0 || state.csvBusy;
+  el.csvImportBtn.textContent = valid.length
+    ? `Nhập ${valid.length} món`
+    : "Không có món nào để nhập";
+}
+
+function resetCsvPreview() {
+  state.csvRows = [];
+  if (el.csvFile) el.csvFile.value = "";
+  if (el.csvPreview) el.csvPreview.classList.add("hidden");
+  if (el.csvEmpty) el.csvEmpty.classList.remove("hidden");
+  if (el.csvCount) el.csvCount.textContent = "";
+  if (el.csvRows) el.csvRows.innerHTML = "";
+  if (el.csvSummary) el.csvSummary.innerHTML = "";
+  if (el.csvImportBtn) {
+    el.csvImportBtn.disabled = true;
+    el.csvImportBtn.textContent = "Nhập 0 món";
+  }
+}
+
+async function handleCsvFile(file) {
+  if (!file) return;
+  resetCsvPreview();
+
+  if (file.size > CSV_MAX_BYTES) {
+    toast("File lớn hơn 1MB — kiểm tra lại file CSV.", "error");
+    return;
+  }
+
+  let text = "";
+  try {
+    const buf = await file.arrayBuffer();
+    text = new TextDecoder("utf-8", { fatal: false }).decode(buf);
+  } catch (err) {
+    toast("Không đọc được file: " + (err.message || String(err)), "error");
+    return;
+  }
+
+  const analysis = analyzeCsv(text);
+
+  if (analysis.errors && analysis.errors.length) {
+    if (el.csvEmpty) el.csvEmpty.classList.add("hidden");
+    if (el.csvPreview) el.csvPreview.classList.remove("hidden");
+    el.csvSummary.innerHTML = `<span class="csv-err">${analysis.errors
+      .map((e) => escapeHtml(e))
+      .join("<br>")}</span>`;
+    el.csvRows.innerHTML = "";
+    el.csvImportBtn.disabled = true;
+    el.csvImportBtn.textContent = "Không thể nhập";
+    return;
+  }
+
+  state.csvRows = analysis.rows;
+  renderCsvPreview();
+}
+
+async function importCsvRows() {
+  if (state.csvBusy) return;
+  const items = state.csvRows.filter((r) => r.status === "ok");
+  if (!items.length) return;
+
+  state.csvBusy = true;
+  renderCsvPreview();
+  el.csvImportBtn.textContent = "Đang nhập...";
+
+  const payload = items.map((r) => ({
+    restaurant_id: r.restaurantId,
+    name: r.name,
+    sort_order: r.sortOrder,
+    image_url: null,
+    is_available: true,
+  }));
+
+  try {
+    const { error } = await state.supabase.from("dishes").insert(payload);
+    if (error) throw error;
+    toast(`Đã nhập ${payload.length} món.`, "success");
+    resetCsvPreview();
+    await loadDishes();
+  } catch (err) {
+    toast("Lỗi nhập CSV: " + (err.message || String(err)), "error");
+    // Đánh dấu lại để người dùng thấy trạng thái thực tế
+    await loadDishes().catch(() => {});
+    state.csvRows = analyzeCsv(
+      "restaurant,name\n" +
+        items.map((r) => `"${r.restaurantName}","${r.name.replace(/"/g, '""')}"`).join("\n")
+    ).rows || [];
+    renderCsvPreview();
+  } finally {
+    state.csvBusy = false;
+    if (!state.csvRows.length) {
+      el.csvImportBtn.disabled = true;
+      el.csvImportBtn.textContent = "Không có món nào để nhập";
+    } else {
+      renderCsvPreview();
+    }
+  }
+}
+
+if (el.csvFile) {
+  el.csvFile.addEventListener("change", () => {
+    const file = el.csvFile.files && el.csvFile.files[0];
+    if (file) handleCsvFile(file);
+  });
+}
+
+if (el.csvImportBtn) {
+  el.csvImportBtn.addEventListener("click", () => importCsvRows());
+}
+
+if (el.csvClearBtn) {
+  el.csvClearBtn.addEventListener("click", () => resetCsvPreview());
 }
 
 /* ---------------- Purge ---------------- */

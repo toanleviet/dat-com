@@ -94,6 +94,45 @@
         </div>
       </section>
 
+      <section class="card setup-card">
+        <div class="section-head">
+          <h2>Import từ CSV</h2>
+          <span class="small muted" id="csvCount"></span>
+        </div>
+
+        <p class="small muted" style="margin:0 0 10px">
+          File CSV 2 cột: <code>restaurant,name</code>. Dòng đầu là header.
+          Mã hoá UTF-8, phân cách <code>,</code> hoặc <code>;</code> đều được.
+        </p>
+
+        <div class="field">
+          <label for="csvFile">Chọn file .csv</label>
+          <input id="csvFile" class="input" type="file" accept=".csv,text/csv" />
+        </div>
+
+        <div id="csvPreview" class="csv-preview hidden">
+          <div class="csv-summary" id="csvSummary"></div>
+          <div class="csv-table-wrap">
+            <table class="csv-table">
+              <thead>
+                <tr><th>#</th><th>Quán</th><th>Tên món</th><th>Trạng thái</th></tr>
+              </thead>
+              <tbody id="csvRows"></tbody>
+            </table>
+          </div>
+          <div class="csv-actions">
+            <button type="button" class="btn btn-primary" id="csvImportBtn" disabled>
+              Nhập 0 món
+            </button>
+            <button type="button" class="btn btn-ghost" id="csvClearBtn">Huỷ</button>
+          </div>
+        </div>
+
+        <div class="empty-state" id="csvEmpty">
+          Chưa chọn file. Xem mẫu ở <code>supabase/mau-import-mon.csv</code>.
+        </div>
+      </section>
+
       <section class="card setup-card danger-zone">
         <div class="section-head">
           <h2>Xóa dữ liệu tháng</h2>

@@ -114,8 +114,36 @@ Danh sách chính chỉ hiển thị đơn của **ngày hiện tại theo giờ
   `restaurant_name` trong bảng `orders`.
 - Ảnh upload lên bucket `dish-images`, giới hạn **2MB**, chỉ file `image/*`.
   Không có ảnh → hiện placeholder gradient + chữ viết tắt tên món.
+- **Import hàng loạt từ CSV** (xem mục dưới).
 - **Xóa toàn bộ đơn** — reset thủ công khi sang tháng mới: xác nhận 2 bước
   (confirm + gõ `XOA`).
+
+### Import món từ CSV
+
+File CSV **2 cột**, dòng đầu là header:
+
+```csv
+restaurant,name
+Hải Nam,Cơm sườn
+Hải Nam,Cơm gà nướng
+Dejavu,Cơm bò lúc lắc
+```
+
+| Quy tắc | Chi tiết |
+| --- | --- |
+| Header | `restaurant,name` (chấp nhận cả `quan,mon`, `Restaurant,Dish`) |
+| Phân cách | `,` hoặc `;` (Excel Việt Nam) hoặc tab — tự nhận diện |
+| Mã hoá | UTF-8. Excel: **Save As → CSV UTF-8** |
+| Tên quán | Phải khớp tên trong bảng `restaurants` (không phân biệt hoa thường, thừa dấu cách) |
+| Tên món | Tối đa 80 ký tự. Có dấu phẩy thì bọc `"..."` |
+| Thứ tự | Tự đánh nối tiếp sau món cuối của quán đó |
+| Trùng | Món đã có trong quán → **bỏ qua**, không tạo trùng |
+| Giới hạn | 1MB, 500 dòng/lần |
+
+File mẫu: [`supabase/mau-import-mon.csv`](supabase/mau-import-mon.csv).
+
+**Luồng trên web:** chọn file → **xem trước** (danh sách món, dòng nào trùng/lỗi)
+→ bấm **Nhập N món**. Không ghi vào database cho tới khi bạn xác nhận.
 
 ### Chat nội bộ
 
@@ -184,6 +212,7 @@ js/app.js           đặt cơm (1 món/ngày) + list realtime + copy + vòng qu
 js/setup.js         CRUD món + upload ảnh + xóa dữ liệu
 js/placeholder.js   sinh ảnh placeholder từ tên món
 supabase/schema.sql bảng + RLS + bucket + realtime + seed
+supabase/mau-import-mon.csv  file CSV mẫu để tham khảo format
 README.md
 ```
 
