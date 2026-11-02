@@ -21,6 +21,7 @@ const state = {
   activeDish: null,
   selectedRating: 0,
   reviewBusy: false,
+  allDishes: [],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -56,6 +57,22 @@ const el = {
   reviewHint: $("reviewHint"),
   reviewList: $("reviewList"),
   reviewEmpty: $("reviewEmpty"),
+  myPickBar: $("myPickBar"),
+  myPickText: $("myPickText"),
+  confirmModal: $("confirmModal"),
+  confirmTitle: $("confirmTitle"),
+  confirmMessage: $("confirmMessage"),
+  confirmYes: $("confirmYes"),
+  confirmNo: $("confirmNo"),
+  spinFab: $("spinFab"),
+  spinModal: $("spinModal"),
+  spinCloseBtn: $("spinCloseBtn"),
+  spinWheelInner: $("spinWheelInner"),
+  spinCanvas: $("spinCanvas"),
+  spinGoBtn: $("spinGoBtn"),
+  spinDishName: $("spinDishName"),
+  spinResult: $("spinResult"),
+  spinResultCard: $("spinResultCard"),
 };
 
 /* ---------------- Helpers ---------------- */
@@ -315,11 +332,6 @@ function starString(rating, max = 5) {
   return out;
 }
 
-function ratingSummaryText(stats) {
-  if (!stats || !stats.count) return "Chưa có đánh giá";
-  return `${stats.avg.toFixed(1)} (${stats.count})`;
-}
-
 function renderDishes() {
   const list = state.dishes;
   el.dishCount.textContent = list.length ? `${list.length} món` : "";
@@ -347,6 +359,7 @@ function renderDishes() {
         <div class="dish-body">
           <div class="dish-name">${escapeHtml(d.name)}</div>
           <button type="button" class="add-btn" data-add="${escapeHtml(d.id)}"
+                  data-name="${escapeHtml(d.name)}"
                   title="Thêm ${escapeHtml(d.name)}" aria-label="Thêm ${escapeHtml(d.name)}">+</button>
         </div>
         <span class="dish-badge hidden">Đã chọn</span>
@@ -360,9 +373,10 @@ function renderDishes() {
   });
 
   el.dishArea.querySelectorAll("[data-add]").forEach((btn) => {
-    btn.addEventListener("click", () => addOrder(btn.dataset.add, btn));
+    const dish = list.find((d) => d.id === btn.dataset.add);
+    btn.setAttribute("data-name", dish ? dish.name : "");
+    btn.addEventListener("click", () => addOrder(btn.dataset.add));
   });
-
   el.dishArea.querySelectorAll("[data-review]").forEach((btn) => {
     btn.addEventListener("click", () => openReviewModal(btn.dataset.review));
   });
@@ -370,54 +384,453 @@ function renderDishes() {
   refreshMineUI();
 }
 
-/* ---------------- Ordering ---------------- */
+/* ---------------- Ordering (1 món / người / ngày) ---------------- */
 
-async function addOrder(dishId, btn) {
+function myTodayOrders() {
+  if (!state.person) return [];
+  return state.orders.filter((o) => o.person_name === state.person);
+}
+async function placeOrder(dishId, { replace = false } = {}) {
+  if (!state.person) {
+    openNameModal();
+    return { ok: false, reason: "no-person" };
+  }
+  if (state.pendingDishIds.size) return { ok: false, reason: "busy" };
+
+  const dish = state.dishes.find((d) => d.id === dishId);
+  const restaurant = state.restaurants.find((r) => r.id === state.activeRestaurantId);
+  if (!dish || !restaurant) return { ok: false, reason: "not-found" };
+
+  const mine = myTodayOrders();
+  if (!replace && mine.length) return { ok: false, reason: "already-ordered" };
+
+  state.pendingDishIds.add(dishId);
+  state.pendingDishIds.add("__all__");
+  refreshMineUI();
+
+  try {
+    if (replace && mine.length) {
+      const { error: delError } = await state.supabase
+        .from("orders")
+        .delete()
+        .eq("order_date", todayISO())
+        .eq("person_name", state.person);
+      if (delError) throw delError;
+
+      const removedIds = new Set(mine.map((o) => o.id));
+      state.orders = state.orders.filter((o) => !removedIds.has(o.id));
+      saveLocalOrders(readLocalOrders().filter((id) => !removedIds.has(id)));
+    }
+
+    const { data, error } = await state.supabase
+      .from("orders")
+      .insert({
+        dish_id: dish.id,
+        dish_name: dish.name,
+        restaurant_name: restaurant.name,
+        person_name: state.person,
+        order_date: todayISO(),
+      })
+      .select("id, dish_id, dish_name, restaurant_name, person_name, order_date, created_at")
+      .single();
+    if (error) throw error;
+
+    addLocalOrder(data.id);
+    if (!state.orders.some((o) => o.id === data.id)) state.orders.push(data);
+    return { ok: true, dish };
+  } catch (err) {
+    return { ok: false, reason: "error", error: err };
+  } finally {
+    state.pendingDishIds.delete(dishId);
+    state.pendingDishIds.delete("__all__");
+    renderOrders();
+    refreshMineUI();
+    if (replace) {
+      try {
+        await loadOrders();
+      } catch {
+        /* giữ danh sách hiện tại nếu reload lỗi */
+      }
+    }
+  }
+}
+
+async function addOrder(dishId) {
   if (!state.person) {
     openNameModal();
     return;
   }
-  if (state.pendingDishIds.has(dishId)) return;
+  if (state.pendingDishIds.size) return;
 
-  const dish = state.dishes.find((d) => d.id === dishId);
-  const restaurant = state.restaurants.find((r) => r.id === state.activeRestaurantId);
-  if (!dish || !restaurant) return;
-
-  state.pendingDishIds.add(dishId);
-  btn.disabled = true;
-
-  const { data, error } = await state.supabase
-    .from("orders")
-    .insert({
-      dish_id: dish.id,
-      dish_name: dish.name,
-      restaurant_name: restaurant.name,
-      person_name: state.person,
-      order_date: todayISO(),
-    })
-    .select("id, dish_id, dish_name, restaurant_name, person_name, order_date, created_at")
-    .single();
-
-  state.pendingDishIds.delete(dishId);
-
-  if (error) {
-    refreshMineUI();
-    toast("Không thêm được đơn: " + error.message, "error");
+  const mine = myTodayOrders();
+  if (mine.length) {
+    const current = mine[0];
+    const target = state.dishes.find((d) => d.id === dishId);
+    if (!target) return;
+    if (current.dish_id === dishId) {
+      toast(`Bạn đã chọn "${current.dish_name}" rồi.`, "");
+      return;
+    }
+    const yes = await askConfirm({
+      title: "Bạn đã chọn món rồi",
+      message: `Bạn đang chọn "${current.dish_name}" (${current.restaurant_name}). Đổi sang "${target.name}" (${state.restaurants.find((r) => r.id === state.activeRestaurantId)?.name || ""})?`,
+      yesLabel: "YES, đổi",
+      noLabel: "NO, giữ",
+    });
+    if (!yes) return;
+    const res = await placeOrder(dishId, { replace: true });
+    if (res.ok) toast(`Đã đổi sang: ${res.dish.name}`, "success");
+    else if (res.reason === "error") toast("Không đổi được: " + res.error.message, "error");
     return;
   }
 
-  addLocalOrder(data.id);
-  if (!state.orders.some((o) => o.id === data.id)) {
-    state.orders.push(data);
-    renderOrders();
-  }
-  refreshMineUI();
-  toast(`Đã thêm: ${dish.name}`, "success");
+  const res = await placeOrder(dishId);
+  if (res.ok) toast(`Đã thêm: ${res.dish.name}`, "success");
+  else if (res.reason === "error") toast("Không thêm được đơn: " + res.error.message, "error");
 }
 
-/* ---------------- Reviews: modal ---------------- */
+function refreshMineUI() {
+  const mine = myTodayOrders();
+  const mineDishIds = new Set(mine.map((o) => o.dish_id));
+  const busy = state.pendingDishIds.size > 0;
 
-function renderStarInput() {
+  el.dishArea.querySelectorAll("[data-add]").forEach((btn) => {
+    const dishId = btn.dataset.add;
+    const selected = mineDishIds.has(dishId);
+    const isPending = state.pendingDishIds.has(dishId);
+    btn.classList.toggle("done", selected);
+    btn.classList.toggle("busy", isPending);
+    btn.textContent = selected ? "✓" : isPending ? "…" : "+";
+    btn.disabled = isPending || busy || !state.person;
+    btn.title = selected
+      ? "Bạn đã chọn món này"
+      : mine.length
+      ? `Đổi sang ${btn.getAttribute("data-name") || "món này"}`
+      : btn.getAttribute("data-name") || "Thêm món";
+
+    const card = btn.closest(".dish-card");
+    if (card) {
+      card.classList.toggle("selected", selected);
+      card.classList.toggle("dimmed", mine.length > 0 && !selected);
+      const badge = card.querySelector(".dish-badge");
+      if (badge) badge.classList.toggle("hidden", !selected);
+    }
+  });
+
+  renderMyPickBar();
+  renderOrders();
+}
+
+function renderMyPickBar() {
+  if (!el.myPickBar) return;
+  const mine = myTodayOrders();
+  if (!state.person || !mine.length) {
+    el.myPickBar.classList.add("hidden");
+    return;
+  }
+  const o = mine[0];
+  el.myPickBar.classList.remove("hidden");
+  el.myPickText.innerHTML = `Bạn hôm nay: <b>${escapeHtml(o.dish_name)}</b> (${escapeHtml(
+    o.restaurant_name
+  )})`;
+}
+
+/* ---------------- Confirm (YES / NO) ---------------- */
+
+const confirmState = { resolve: null, returnFocus: null };
+
+function askConfirm({ title, message, yesLabel = "YES", noLabel = "NO" }) {
+  if (!el.confirmModal) return Promise.resolve(window.confirm(message));
+  if (confirmState.resolve) confirmState.resolve(false);
+
+  el.confirmTitle.textContent = title || "";
+  el.confirmMessage.textContent = message || "";
+  el.confirmYes.textContent = yesLabel;
+  el.confirmNo.textContent = noLabel;
+  confirmState.returnFocus = document.activeElement;
+  el.confirmModal.classList.remove("hidden");
+  setTimeout(() => el.confirmYes.focus(), 40);
+
+  return new Promise((resolve) => {
+    confirmState.resolve = resolve;
+  });
+}
+
+function resolveConfirm(answer) {
+  if (!confirmState.resolve) return;
+  el.confirmModal.classList.add("hidden");
+  const resolve = confirmState.resolve;
+  confirmState.resolve = null;
+  const focus = confirmState.returnFocus;
+  confirmState.returnFocus = null;
+  if (focus && typeof focus.focus === "function") focus.focus();
+  resolve(answer);
+}
+
+if (el.confirmYes) el.confirmYes.addEventListener("click", () => resolveConfirm(true));
+if (el.confirmNo) el.confirmNo.addEventListener("click", () => resolveConfirm(false));
+if (el.confirmModal) {
+  el.confirmModal.addEventListener("click", (e) => {
+    if (e.target === el.confirmModal) resolveConfirm(false);
+  });
+}
+
+/* ---------------- Lucky spin: gợi ý món ---------------- */
+
+const spinState = { angle: 0, spinning: false, cooldown: 0 };
+
+const SPIN_COLORS = [
+  "#ff6b6b", "#f59e0b", "#22c55e", "#3b82f6",
+  "#a855f7", "#ec4899", "#14b8a6", "#f97316",
+  "#84cc16", "#6366f1",
+];
+
+  "#ff6b6b", "#f59e0b", "#22c55e", "#3b82f6",
+  "#a855f7", "#ec4899", "#14b8a6", "#f97316",
+  "#84cc16", "#6366f1",
+];
+
+function wheelLabel(name) {
+  const text = String(name || "");
+  return text.length > 22 ? text.slice(0, 21) + "…" : text;
+}
+
+function drawWheel(items) {
+  if (!el.spinCanvas) return;
+  const canvas = el.spinCanvas;
+  const size = canvas.clientWidth || 300;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = size * dpr;
+  canvas.height = size * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, size, size);
+
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size / 2 - 6;
+
+  if (!items.length) {
+    ctx.fillStyle = "#f3f4f6";
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#9ca3af";
+    ctx.font = `600 ${Math.round(size / 18)}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Chưa có món nào", cx, cy);
+    return;
+  }
+
+  const n = items.length;
+  const slice = (Math.PI * 2) / n;
+
+  for (let i = 0; i < n; i++) {
+    const start = i * slice - Math.PI / 2;
+    const end = start + slice;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, start, end);
+    ctx.closePath();
+    ctx.fillStyle = SPIN_COLORS[i % SPIN_COLORS.length];
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.85)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(start + slice / 2);
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff";
+    ctx.font = `700 ${Math.max(10, Math.round(size / (n > 12 ? 26 : 20)))}px system-ui, sans-serif`;
+    ctx.shadowColor = "rgba(0,0,0,.25)";
+    ctx.shadowBlur = 3;
+    ctx.fillText(wheelLabel(items[i].name), r - 14, 0);
+    ctx.restore();
+  }
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(20, size * 0.1), 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+  ctx.strokeStyle = "#e5e7eb";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function renderWheelRotation() {
+  if (el.spinWheelInner) {
+    el.spinWheelInner.style.transform = `rotate(${spinState.angle}deg)`;
+  }
+}
+
+function pickSpinDish(items) {
+  const n = items.length;
+  const sliceDeg = 360 / n;
+  const normalized = ((-spinState.angle % 360) + 360) % 360;
+  const index = Math.floor(normalized / sliceDeg) % n;
+  return { dish: items[index], index };
+}
+
+async function ensureSpinPool() {
+  if (state.allDishes && state.allDishes.length) return state.allDishes;
+  const { data, error } = await state.supabase
+    .from("dishes")
+    .select("id, name, image_url, restaurant_id, sort_order")
+    .eq("is_available", true)
+    .order("name", { ascending: true });
+  if (error) throw error;
+  state.allDishes = data || [];
+  return state.allDishes;
+}
+
+async function openSpinModal() {
+  if (!state.person) {
+    openNameModal();
+    return;
+  }
+  el.spinModal.classList.remove("hidden");
+  el.spinResult.classList.add("hidden");
+  el.spinResultCard.innerHTML = "";
+  el.spinDishName.textContent = "Đang chuẩn bị món...";
+  setSpinButton(true);
+
+  if (!state.allDishes.length) {
+    drawWheel([]);
+    try {
+      await ensureSpinPool();
+    } catch (err) {
+      el.spinDishName.textContent = "Không tải được danh sách món.";
+      toast("Lỗi: " + (err.message || String(err)), "error");
+      return;
+    }
+  }
+
+  spinState.angle = 0;
+  renderWheelRotation();
+  drawWheel(state.allDishes);
+  setSpinButton(false);
+  el.spinDishName.textContent = "Bấm QUAY để xem vận may!";
+}
+
+function setSpinButton(busy) {
+  if (!el.spinGoBtn) return;
+  el.spinGoBtn.disabled = busy || spinState.spinning;
+  el.spinGoBtn.classList.toggle("spinning", !!busy || spinState.spinning);
+  el.spinGoBtn.textContent = busy || spinState.spinning ? "Đang quay..." : "QUAY NGAY";
+}
+
+function closeSpinModal() {
+  if (spinState.spinning) return;
+  el.spinModal.classList.add("hidden");
+}
+
+async function spinWheel() {
+  if (spinState.spinning) return;
+  const items = state.allDishes || [];
+  if (!items.length) {
+    toast("Chưa có món nào để gợi ý.", "error");
+    return;
+  }
+  if (state.pendingDishIds.size) return;
+
+  spinState.spinning = true;
+  setSpinButton(true);
+  el.spinResult.classList.add("hidden");
+  el.spinDishName.textContent = "Quay... may mắn nào!";
+
+  const n = items.length;
+  const sliceDeg = 360 / n;
+  const targetIndex = Math.floor(Math.random() * n);
+  const jitter = (Math.random() - 0.5) * sliceDeg * 0.55;
+  const currentNormalized = ((-spinState.angle % 360) + 360) % 360;
+  const currentIndex = currentNormalized / sliceDeg;
+  const turns = 5 + Math.floor(Math.random() * 3);
+  const extraSlices = (targetIndex - currentIndex + n) % n;
+  spinState.angle -= turns * 360;
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      spinState.angle -= extraSlices * sliceDeg + jitter;
+      renderWheelRotation();
+    });
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 3700));
+
+  const dish = items[targetIndex];
+  spinState.spinning = false;
+  setSpinButton(false);
+
+  el.spinDishName.textContent = "Món dành cho bạn là...";
+  el.spinResultCard.innerHTML = `
+    <div class="spin-result-thumb"><img alt="" /><div class="placeholder"></div></div>
+    <div class="spin-result-info">
+      <div class="spin-result-name"></div>
+      <div class="spin-result-sub"></div>
+    </div>`;
+  const thumb = el.spinResultCard.querySelector(".spin-result-thumb");
+  attachDishImage(thumb, dish.image_url, dish.name);
+  el.spinResultCard.querySelector(".spin-result-name").textContent = dish.name;
+  const restaurant = state.restaurants.find((r) => r.id === dish.restaurant_id);
+  el.spinResultCard.querySelector(".spin-result-sub").textContent = restaurant
+    ? `Menu ${restaurant.name}`
+    : "";
+  el.spinResult.classList.remove("hidden");
+
+  const yes = await askConfirm({
+    title: `Bạn muốn chọn "${dish.name}" chứ?`,
+    message: restaurant
+      ? `Món từ menu ${restaurant.name}. Chọn YES để đặt ngay.`
+      : "Chọn YES để đặt ngay.",
+    yesLabel: "YES, chốt món",
+    noLabel: "NO, quay lại",
+  });
+
+  if (!yes) {
+    el.spinDishName.textContent = "Không sao, quay tiếp khi bạn muốn!";
+    return;
+  }
+
+  const currentMine = myTodayOrders();
+  if (currentMine.length && currentMine[0].dish_id !== dish.id) {
+    const acceptSwap = await askConfirm({
+      title: "Bạn đã chọn món rồi",
+      message: `Bạn đang chọn "${currentMine[0].dish_name}". Đổi sang "${dish.name}"?`,
+      yesLabel: "YES, đổi",
+      noLabel: "NO, giữ",
+    });
+    if (!acceptSwap) return;
+  }
+
+  const res = await placeOrder(dish.id, { replace: currentMine.length > 0 });
+  if (res.ok) {
+    toast(`Đã đặt: ${dish.name}`, "success");
+    closeSpinModal();
+  } else if (res.reason === "error") {
+    toast("Không đặt được: " + res.error.message, "error");
+  }
+}
+
+if (el.spinFab) el.spinFab.addEventListener("click", () => openSpinModal());
+if (el.spinGoBtn) el.spinGoBtn.addEventListener("click", () => spinWheel());
+if (el.spinCloseBtn) el.spinCloseBtn.addEventListener("click", () => closeSpinModal());
+if (el.spinModal) {
+  el.spinModal.addEventListener("click", (e) => {
+    if (e.target === el.spinModal) closeSpinModal();
+  });
+}
+
+window.addEventListener("resize", () => {
+  if (el.spinModal && !el.spinModal.classList.contains("hidden")) {
+    drawWheel(state.allDishes || []);
+  }
+});
+
+/* ---------------- Reviews: modal ---------------- */
   el.reviewStarsInput.querySelectorAll(".rate-star").forEach((btn) => {
     const value = Number(btn.dataset.value);
     const on = value <= state.selectedRating;
@@ -528,7 +941,13 @@ el.reviewModal.addEventListener("click", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !el.reviewModal.classList.contains("hidden")) closeReviewModal();
+  if (e.key !== "Escape") return;
+  if (!el.confirmModal.classList.contains("hidden")) {
+    resolveConfirm(false);
+    return;
+  }
+  if (!el.reviewModal.classList.contains("hidden")) closeReviewModal();
+  if (!el.spinModal.classList.contains("hidden")) closeSpinModal();
 });
 
 el.reviewSubmitBtn.addEventListener("click", () => submitReview());
@@ -753,6 +1172,7 @@ function subscribeRealtime() {
       "postgres_changes",
       { event: "*", schema: "public", table: "dishes" },
       () => {
+        state.allDishes = [];
         if (state.activeRestaurantId) refreshActiveDishes();
       }
     )

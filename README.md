@@ -68,12 +68,22 @@ hoặc `npx serve` nếu không có Python.
 1. Lần đầu nhập tên (lưu vào `localStorage` key `dedatcom_person`, lần sau tự điền).
    Bấm chip tên trên header để đổi tên.
 2. Bấm **Menu Hải Nam** / **Menu Dejavu** → bấm **+** trên món để đặt.
+   - **Mỗi người chỉ được chọn 1 món / ngày.** Đã chọn rồi mà bấm món khác sẽ hiện
+     hộp thoại **"Bạn đã chọn món rồi"** với 2 nút **YES, đổi** / **NO, giữ**.
+     YES → thay đơn cũ bằng món mới; NO → không đổi gì.
+   - Thanh **"Bạn hôm nay: …"** phía trên danh sách món cho biết món bạn đang chọn.
    - Nút bị disable khi request đang chạy (chống double-click tạo đơn trùng).
-   - Đặt xong nút thành **✓**, card viền xanh.
-3. Panel **Đơn hôm nay** ở bên phải (mobile: phía dưới) tự cập nhật realtime.
-4. **Ai cũng có thể xóa bất kỳ đơn nào** — mỗi dòng đơn đều có nút **✕** kèm hộp
+   - Đặt xong nút thành **✓**, card viền xanh, các card khác bị làm mờ.
+3. **Gợi ý món cho tui!!!** — nút tròn nhiều màu ở góc dưới phải màn hình.
+   Bấm → mở **Lucky Food** với vòng quay chứa toàn bộ món đang bán (cả 2 menu).
+   Bấm **QUAY NGAY** → bánh xe quay ~3.5 giây → hiện món được chọn kèm hộp thoại
+   **"Bạn muốn chọn món này chứ?"** (YES / NO).
+   - YES → đặt món đó (nếu đã có món khác thì hỏi thêm 1 lần để đổi).
+   - NO → giữ nguyên, có thể quay lại.
+4. Panel **Đơn hôm nay** ở bên phải (mobile: phía dưới) tự cập nhật realtime.
+5. **Ai cũng có thể xóa bất kỳ đơn nào** — mỗi dòng đơn đều có nút **✕** kèm hộp
    thoại xác nhận hiện tên món và tên người đã đặt.
-5. **Copy danh sách** → dán vào Word/Slack/Notepad, mỗi dòng đúng cú pháp
+6. **Copy danh sách** → dán vào Word/Slack/Notepad, mỗi dòng đúng cú pháp
    `<Tên món>_(<tên quán>) - <tên người đặt>`.
 
 ### Đánh giá món
@@ -157,7 +167,7 @@ setup.html          trang quản lý món + xóa dữ liệu
 css/style.css
 js/config.js        SUPABASE_URL, SUPABASE_ANON_KEY (điền tay)
 js/supabase-client.js
-js/app.js           đặt cơm + list realtime + copy + đánh giá món
+js/app.js           đặt cơm (1 món/ngày) + list realtime + copy + vòng quay gợi ý + đánh giá món
 js/setup.js         CRUD món + upload ảnh + xóa dữ liệu
 js/placeholder.js   sinh ảnh placeholder từ tên món
 supabase/schema.sql bảng + RLS + bucket + realtime + seed
@@ -181,6 +191,10 @@ không cần `npm install`.
 - Không xuất file Word — chỉ **Copy** text.
 - Ảnh món do bất kỳ ai upload; nếu ai đó up ảnh quá lớn/xấu, sửa tay ở trang Setup.
 - Đánh giá không giới hạn số lần: một người có thể spam nhiều dòng cho cùng một món.
+- **Giới hạn 1 món/người/ngày được thực thi ở giao diện**, không phải ở database
+  (không có đăng nhập nên Postgres không biết "ai là ai"). Nếu ai đó gọi thẳng API
+  Supabase vẫn có thể tạo nhiều đơn; trang web sẽ đổi món (xóa đơn cũ của tên đó,
+  tạo đơn mới) khi người đó quyết định thay.
 
 ---
 
