@@ -1,0 +1,16 @@
+# Bỏ qua file hệ thống
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Editor / IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Log
+*.log
+
+# Bản nháp / file tạm
+tmp/
+*.bak

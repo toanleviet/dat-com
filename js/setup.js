@@ -1,0 +1,432 @@
+import { isConfigured, IMAGE_BUCKET, MAX_IMAGE_SIZE } from "./config.js";
+import { getSupabase } from "./supabase-client.js";
+import { attachDishImage } from "./placeholder.js";
+
+const state = {
+  supabase: null,
+  restaurants: [],
+  dishes: [],
+  editingId: null,
+  pendingImageFile: null,
+  currentImageUrl: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+const el = {
+  configBanner: $("configBanner"),
+  errorBanner: $("errorBanner"),
+  errorMessage: $("errorMessage"),
+  retryBtn: $("retryBtn"),
+  formTitle: $("formTitle"),
+  dishForm: $("dishForm"),
+  dishName: $("dishName"),
+  dishRestaurant: $("dishRestaurant"),
+  dishSort: $("dishSort"),
+  dishImage: $("dishImage"),
+  previewThumb: $("previewThumb"),
+  previewHint: $("previewHint"),
+  submitBtn: $("submitBtn"),
+  cancelEditBtn: $("cancelEditBtn"),
+  totalCount: $("totalCount"),
+  dishManageArea: $("dishManageArea"),
+  purgeBtn: $("purgeBtn"),
+  toastWrap: $("toastWrap"),
+};
+
+/* ---------------- Helpers ---------------- */
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c]));
+}
+
+function toast(message, type = "") {
+  const node = document.createElement("div");
+  node.className = "toast" + (type ? " " + type : "");
+  node.textContent = message;
+  el.toastWrap.appendChild(node);
+  setTimeout(() => node.remove(), 2800);
+}
+
+function showError(title, message) {
+  el.errorBanner.classList.remove("hidden");
+  el.errorBanner.querySelector("#errorTitle").textContent = title;
+  el.errorMessage.textContent = message || "";
+}
+
+function hideError() {
+  el.errorBanner.classList.add("hidden");
+}
+
+function fileExt(file) {
+  const fromName = (file.name.split(".").pop() || "").toLowerCase();
+  const safe = /^(jpe?g|png|webp|gif|avif)$/.test(fromName);
+  if (safe) return fromName === "jpeg" ? "jpg" : fromName;
+  const fromType = (file.type.split("/").pop() || "").toLowerCase();
+  return fromType === "jpeg" ? "jpg" : fromType || "jpg";
+}
+
+/* ---------------- Data ---------------- */
+
+async function loadRestaurants() {
+  const { data, error } = await state.supabase
+    .from("restaurants")
+    .select("id, name, sort_order")
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  if (error) throw error;
+  state.restaurants = data || [];
+  renderRestaurantOptions();
+}
+
+function renderRestaurantOptions() {
+  const prev = el.dishRestaurant.value;
+  el.dishRestaurant.innerHTML = state.restaurants
+    .map((r) => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.name)}</option>`)
+    .join("");
+  if (prev && state.restaurants.some((r) => r.id === prev)) el.dishRestaurant.value = prev;
+  if (!state.restaurants.length) {
+    el.dishRestaurant.innerHTML = '<option value="">(chưa có quán)</option>';
+  }
+}
+
+async function loadDishes() {
+  const { data, error } = await state.supabase
+    .from("dishes")
+    .select("id, restaurant_id, name, image_url, is_available, sort_order, created_at")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  state.dishes = data || [];
+  renderDishList();
+}
+
+/* ---------------- Render list ---------------- */
+
+function renderDishList() {
+  el.totalCount.textContent = `${state.dishes.length} món`;
+
+  if (!state.dishes.length) {
+    el.dishManageArea.innerHTML =
+      '<div class="empty-state">Chưa có món nào. Dùng form bên cạnh để thêm.</div>';
+    return;
+  }
+
+  const groups = state.restaurants
+    .map((r) => ({ restaurant: r, dishes: state.dishes.filter((d) => d.restaurant_id === r.id) }))
+    .filter((g) => g.dishes.length);
+
+  const orphaned = state.dishes.filter(
+    (d) => !state.restaurants.some((r) => r.id === d.restaurant_id)
+  );
+  if (orphaned.length) groups.push({ restaurant: { name: "Khác" }, dishes: orphaned });
+
+  el.dishManageArea.innerHTML = groups
+    .map(
+      (g) => `
+      <h3 style="margin:14px 0 4px">${escapeHtml(g.restaurant.name)}</h3>
+      ${g.dishes
+        .map(
+          (d) => `
+        <div class="setup-dish${d.is_available ? "" : " unavailable"}" data-id="${escapeHtml(d.id)}">
+          <div class="thumb">
+            <img alt="${escapeHtml(d.name)}" />
+            <div class="placeholder"></div>
+          </div>
+          <div class="info">
+            <div class="title">${escapeHtml(d.name)}</div>
+            <div class="sub">
+              #${d.sort_order} · ${d.is_available ? "Đang bán" : "Tạm ẩn"}
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn btn-sm" data-edit="${escapeHtml(d.id)}">Sửa</button>
+            <button type="button" class="btn btn-sm" data-toggle="${escapeHtml(d.id)}">
+              ${d.is_available ? "Ẩn" : "Bật"}
+            </button>
+            <button type="button" class="btn btn-sm btn-danger" data-delete="${escapeHtml(d.id)}">Xóa</button>
+          </div>
+        </div>`
+        )
+        .join("")}`
+    )
+    .join("");
+
+  el.dishManageArea.querySelectorAll(".setup-dish").forEach((row) => {
+    const dish = state.dishes.find((d) => d.id === row.dataset.id);
+    if (dish) attachDishImage(row.querySelector(".thumb"), dish.image_url, dish.name);
+  });
+
+  el.dishManageArea.querySelectorAll("[data-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => startEdit(btn.dataset.edit))
+  );
+  el.dishManageArea.querySelectorAll("[data-toggle]").forEach((btn) =>
+    btn.addEventListener("click", () => toggleDish(btn.dataset.toggle))
+  );
+  el.dishManageArea.querySelectorAll("[data-delete]").forEach((btn) =>
+    btn.addEventListener("click", () => deleteDish(btn.dataset.delete))
+  );
+}
+
+/* ---------------- Preview ---------------- */
+
+function renderPreview(name, imageUrl) {
+  attachDishImage(el.previewThumb, imageUrl, name || "Món");
+}
+
+el.previewThumb.querySelector("img").addEventListener("error", () => {
+  if (state.editingId) state.currentImageUrl = null;
+});
+
+function updateLocalPreview() {
+  const file = el.dishImage.files && el.dishImage.files[0];
+  if (file) {
+    el.previewHint.textContent = `Ảnh mới: ${file.name}`;
+    renderPreview(el.dishName.value || file.name, URL.createObjectURL(file));
+  } else if (state.editingId) {
+    el.previewHint.textContent = state.currentImageUrl
+      ? "Đang giữ ảnh hiện tại (chọn ảnh khác để thay)."
+      : "Món này chưa có ảnh — sẽ dùng placeholder.";
+    renderPreview(el.dishName.value, state.currentImageUrl);
+  } else {
+    el.previewHint.textContent = "Bỏ trống ảnh để dùng placeholder theo tên món.";
+    renderPreview(el.dishName.value, "");
+  }
+}
+
+el.dishImage.addEventListener("change", () => {
+  state.pendingImageFile = el.dishImage.files && el.dishImage.files[0] ? el.dishImage.files[0] : null;
+  updateLocalPreview();
+});
+
+el.dishName.addEventListener("input", () => {
+  if (!state.pendingImageFile) {
+    updateLocalPreview();
+  } else {
+    renderPreview(el.dishName.value, el.previewThumb.querySelector("img").getAttribute("src"));
+  }
+});
+
+/* ---------------- Edit mode ---------------- */
+
+function resetForm() {
+  state.editingId = null;
+  state.pendingImageFile = null;
+  state.currentImageUrl = null;
+  el.dishForm.reset();
+  el.dishSort.value = "0";
+  el.formTitle.textContent = "Thêm món mới";
+  el.submitBtn.textContent = "Thêm món";
+  el.cancelEditBtn.classList.add("hidden");
+  renderRestaurantOptions();
+  updateLocalPreview();
+}
+
+function startEdit(id) {
+  const dish = state.dishes.find((d) => d.id === id);
+  if (!dish) return;
+  state.editingId = id;
+  state.pendingImageFile = null;
+  state.currentImageUrl = dish.image_url || null;
+  el.dishName.value = dish.name;
+  el.dishRestaurant.value = dish.restaurant_id;
+  el.dishSort.value = String(dish.sort_order ?? 0);
+  el.dishImage.value = "";
+  el.formTitle.textContent = "Sửa món";
+  el.submitBtn.textContent = "Lưu thay đổi";
+  el.cancelEditBtn.classList.remove("hidden");
+  updateLocalPreview();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  el.dishName.focus();
+}
+
+el.cancelEditBtn.addEventListener("click", () => resetForm());
+
+/* ---------------- Upload ---------------- */
+
+async function uploadImage(file) {
+  if (!file.type.startsWith("image/")) throw new Error("File không phải ảnh.");
+  if (file.size > MAX_IMAGE_SIZE) throw new Error("Ảnh vượt quá 2MB.");
+
+  const ext = fileExt(file);
+  const path = `${crypto.randomUUID()}.${ext}`;
+  const { error } = await state.supabase.storage
+    .from(IMAGE_BUCKET)
+    .upload(path, file, { cacheControl: "31536000", contentType: file.type, upsert: false });
+  if (error) throw error;
+
+  const { data } = state.supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function removeOldImage(url) {
+  if (!url) return;
+  const marker = `/${IMAGE_BUCKET}/`;
+  const idx = url.indexOf(marker);
+  if (idx === -1) return;
+  const path = url.slice(idx + marker.length).split("?")[0];
+  if (!path) return;
+  await state.supabase.storage.from(IMAGE_BUCKET).remove([path]).catch(() => {});
+}
+
+/* ---------------- Submit ---------------- */
+
+el.dishForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (el.dishForm.dataset.busy === "1") return;
+
+  const name = el.dishName.value.trim();
+  const restaurantId = el.dishRestaurant.value;
+  const sortOrder = Number.parseInt(el.dishSort.value, 10) || 0;
+
+  if (!name) return el.dishName.focus();
+  if (!restaurantId) return toast("Chưa có quán nào để gán món.", "error");
+
+  el.dishForm.dataset.busy = "1";
+  el.submitBtn.disabled = true;
+  const originalLabel = el.submitBtn.textContent;
+  el.submitBtn.textContent = state.editingId ? "Đang lưu..." : "Đang thêm...";
+
+  try {
+    let imageUrl = state.editingId ? state.currentImageUrl : null;
+    const file = el.dishImage.files && el.dishImage.files[0];
+
+    if (file) {
+      imageUrl = await uploadImage(file);
+      if (state.editingId && state.currentImageUrl && state.currentImageUrl !== imageUrl) {
+        await removeOldImage(state.currentImageUrl);
+      }
+    }
+
+    if (state.editingId) {
+      const { error } = await state.supabase
+        .from("dishes")
+        .update({ name, restaurant_id: restaurantId, sort_order: sortOrder, image_url: imageUrl })
+        .eq("id", state.editingId);
+      if (error) throw error;
+      toast("Đã lưu thay đổi.", "success");
+    } else {
+      const { error } = await state.supabase
+        .from("dishes")
+        .insert({ name, restaurant_id: restaurantId, sort_order: sortOrder, image_url: imageUrl });
+      if (error) throw error;
+      toast("Đã thêm món.", "success");
+    }
+
+    resetForm();
+    await loadDishes();
+  } catch (err) {
+    toast("Lỗi: " + (err.message || String(err)), "error");
+  } finally {
+    delete el.dishForm.dataset.busy;
+    el.submitBtn.disabled = false;
+    el.submitBtn.textContent = state.editingId ? "Lưu thay đổi" : originalLabel;
+  }
+});
+
+/* ---------------- Row actions ---------------- */
+
+async function toggleDish(id) {
+  const dish = state.dishes.find((d) => d.id === id);
+  if (!dish) return;
+  const { error } = await state.supabase
+    .from("dishes")
+    .update({ is_available: !dish.is_available })
+    .eq("id", id);
+  if (error) return toast("Lỗi: " + error.message, "error");
+  await loadDishes();
+}
+
+async function deleteDish(id) {
+  const dish = state.dishes.find((d) => d.id === id);
+  if (!dish) return;
+  const ok = window.confirm(
+    `Xóa món "${dish.name}"?\n\nCác đơn đã đặt vẫn giữ tên món (lưu snapshot), chỉ món không còn trong menu.`
+  );
+  if (!ok) return;
+
+  const { error } = await state.supabase.from("dishes").delete().eq("id", id);
+  if (error) return toast("Lỗi: " + error.message, "error");
+
+  if (dish.image_url) await removeOldImage(dish.image_url);
+  if (state.editingId === id) resetForm();
+  toast("Đã xóa món.", "success");
+  await loadDishes();
+}
+
+/* ---------------- Purge ---------------- */
+
+el.purgeBtn.addEventListener("click", async () => {
+  const ok1 = window.confirm("Xóa TOÀN BỘ đơn đã đặt? Thao tác này không khôi phục được.");
+  if (!ok1) return;
+  const ok2 = window.prompt('Gõ chính xác chữ XOA để xác nhận:');
+  if (ok2 !== "XOA") {
+    toast("Đã hủy — xác nhận không khớp.", "error");
+    return;
+  }
+
+  el.purgeBtn.disabled = true;
+  el.purgeBtn.textContent = "Đang xóa...";
+  // PostgREST yêu cầu điều kiện filter; neq trên id khớp mọi dòng.
+  const { error } = await state.supabase
+    .from("orders")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+  el.purgeBtn.disabled = false;
+  el.purgeBtn.textContent = "Xóa toàn bộ đơn";
+
+  if (error) return toast("Lỗi: " + error.message, "error");
+  localStorage.removeItem("dedatcom_orders");
+  toast("Đã xóa toàn bộ đơn.", "success");
+});
+
+/* ---------------- Boot ---------------- */
+
+async function loadAll() {
+  hideError();
+  try {
+    await loadRestaurants();
+    await loadDishes();
+  } catch (err) {
+    showError("Không tải được dữ liệu.", err.message || String(err));
+  }
+}
+
+el.retryBtn.addEventListener("click", () => loadAll());
+
+async function init() {
+  updateLocalPreview();
+
+  if (!isConfigured()) {
+    el.configBanner.classList.remove("hidden");
+    el.dishManageArea.innerHTML =
+      '<div class="empty-state">Chưa cấu hình Supabase — xem banner phía trên.</div>';
+    return;
+  }
+
+  try {
+    state.supabase = await getSupabase();
+  } catch (err) {
+    showError("Không tải được thư viện Supabase.", err.message || String(err));
+    return;
+  }
+
+  await loadAll();
+
+  state.supabase
+    .channel("datcom-setup-dishes")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "dishes" },
+      () => loadDishes()
+    )
+    .subscribe();
+}
+
+init();

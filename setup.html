@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quản lý món — Đặt cơm công ty</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍚</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⚙️</span>
+      <span class="text">Quản lý món</span>
+    </div>
+    <div class="spacer"></div>
+    <a class="btn btn-ghost btn-sm" href="index.html">← Về trang đặt cơm</a>
+  </header>
+
+  <main class="page">
+    <div id="configBanner" class="banner banner-warn hidden">
+      <div>
+        <strong>Chưa cấu hình Supabase.</strong>
+        Mở <code>js/config.js</code> và điền <code>SUPABASE_URL</code> +
+        <code>SUPABASE_ANON_KEY</code>. Hướng dẫn chi tiết trong <code>README.md</code>.
+      </div>
+    </div>
+
+    <div id="errorBanner" class="banner banner-error hidden">
+      <div style="flex:1">
+        <strong id="errorTitle">Có lỗi xảy ra.</strong>
+        <div id="errorMessage" class="small"></div>
+      </div>
+      <button id="retryBtn" class="btn btn-sm" type="button">Thử lại</button>
+    </div>
+
+    <div class="banner banner-warn" id="securityNote">
+      <div>
+        <strong>Trang này không có mật khẩu.</strong>
+        Ai có link đều thêm / sửa / ẩn / xóa được món, và xóa được mọi đơn đã đặt.
+        Chỉ chia sẻ nội bộ.
+      </div>
+    </div>
+
+    <div class="setup-grid">
+      <section class="card setup-card">
+        <div class="section-head">
+          <h2 id="formTitle">Thêm món mới</h2>
+          <button id="cancelEditBtn" class="btn btn-ghost btn-sm hidden" type="button">Hủy sửa</button>
+        </div>
+
+        <form id="dishForm">
+          <div class="field">
+            <label for="dishName">Tên món</label>
+            <input id="dishName" class="input" type="text" maxlength="80" required
+                   placeholder="VD: Cơm sườn" />
+          </div>
+          <div class="form-row">
+            <div class="field">
+              <label for="dishRestaurant">Thuộc menu</label>
+              <select id="dishRestaurant" class="select" required></select>
+            </div>
+            <div class="field">
+              <label for="dishSort">Thứ tự (nhỏ hiện trước)</label>
+              <input id="dishSort" class="input" type="number" step="1" value="0" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="dishImage">Ảnh món (tối đa 2MB, JPG/PNG/WebP)</label>
+            <input id="dishImage" class="input" type="file" accept="image/*" />
+          </div>
+
+          <div class="preview-box" style="margin-bottom:12px">
+            <div class="thumb" id="previewThumb">
+              <img alt="" style="display:none" />
+              <div class="placeholder">?</div>
+            </div>
+            <div class="small muted" id="previewHint">
+              Bỏ trống ảnh để dùng placeholder theo tên món.
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-block" type="submit" id="submitBtn">Thêm món</button>
+        </form>
+      </section>
+
+      <section class="card setup-card">
+        <div class="section-head">
+          <h2>Danh sách món</h2>
+          <span class="small muted" id="totalCount"></span>
+        </div>
+        <div id="dishManageArea">
+          <div class="empty-state">Đang tải...</div>
+        </div>
+      </section>
+
+      <section class="card setup-card danger-zone">
+        <div class="section-head">
+          <h2>Xóa dữ liệu tháng</h2>
+        </div>
+        <p class="small" style="margin:0 0 12px">
+          Xóa hẳn toàn bộ đơn đã đặt (tất cả các ngày, của mọi người). Không khôi phục được.
+          Dùng khi sang tháng mới hoặc khi list bị rác. Đánh giá món KHÔNG bị xóa.
+        </p>
+        <button id="purgeBtn" class="btn btn-danger" type="button">Xóa toàn bộ đơn</button>
+      </section>
+    </div>
+  </main>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <script type="module" src="js/setup.js"></script>
+</body>
+</html>

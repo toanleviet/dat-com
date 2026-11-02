@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Đặt cơm công ty</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍚</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🍚</span>
+      <span class="text">Đặt cơm công ty</span>
+    </div>
+    <div class="spacer"></div>
+    <button id="personChip" class="person-chip hidden" type="button" title="Đổi tên người đặt">
+      <span class="name" id="personChipName"></span>
+      <span class="hint">Đổi</span>
+    </button>
+    <a class="btn btn-ghost btn-sm" href="setup.html">Quản lý món</a>
+  </header>
+
+  <main class="page">
+    <div id="configBanner" class="banner banner-warn hidden">
+      <div>
+        <strong>Chưa cấu hình Supabase.</strong>
+        Mở <code>js/config.js</code> và điền <code>SUPABASE_URL</code> +
+        <code>SUPABASE_ANON_KEY</code>. Hướng dẫn chi tiết trong <code>README.md</code>.
+      </div>
+    </div>
+
+    <div id="errorBanner" class="banner banner-error hidden">
+      <div style="flex:1">
+        <strong id="errorTitle">Có lỗi xảy ra.</strong>
+        <div id="errorMessage" class="small"></div>
+      </div>
+      <button id="retryBtn" class="btn btn-sm" type="button">Thử lại</button>
+    </div>
+
+    <div class="layout">
+      <section>
+        <div class="card">
+          <div class="section-head">
+            <h2>1. Chọn menu</h2>
+            <span class="small muted" id="todayLabel"></span>
+          </div>
+          <div class="menu-cards" id="menuCards"></div>
+        </div>
+
+        <div class="card">
+          <div class="section-head">
+            <h2 id="dishSectionTitle">2. Chọn món</h2>
+            <span class="small muted" id="dishCount"></span>
+          </div>
+          <div id="dishArea">
+            <div class="empty-state">Chọn menu ở trên để xem danh sách món.</div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="order-panel">
+        <div class="card">
+          <div class="section-head">
+            <h2>Đơn hôm nay</h2>
+            <span class="small muted" id="orderCount">0 đơn</span>
+          </div>
+          <ul class="order-list" id="orderList"></ul>
+          <div class="empty-state" id="orderEmpty">Chưa có ai đặt món hôm nay.</div>
+          <div style="margin-top:12px">
+            <button id="copyBtn" class="btn btn-primary btn-block" type="button" disabled>
+              Copy danh sách
+            </button>
+          </div>
+          <p class="small muted" style="margin:8px 0 0">
+            Ai cũng có thể xóa bất kỳ đơn nào. Bấm ★ trên món để xem đánh giá.
+          </p>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <div class="modal-backdrop hidden" id="nameModal">
+    <form class="modal" id="nameForm">
+      <h2 id="nameModalTitle">Bạn là ai?</h2>
+      <p>Nhập tên để mình gắn vào món bạn đặt. Không cần tài khoản.</p>
+      <div class="field">
+        <label for="nameInput">Tên người đặt</label>
+        <input id="nameInput" class="input" type="text" maxlength="40" autocomplete="name"
+               placeholder="VD: An" required />
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">Vào đặt cơm</button>
+    </form>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <div class="modal-backdrop hidden" id="reviewModal">
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="reviewDishName">
+      <div class="modal-head">
+        <div>
+          <p class="small muted" style="margin:0">Đánh giá món</p>
+          <h2 id="reviewDishName"></h2>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="reviewCloseBtn" aria-label="Đóng">✕</button>
+      </div>
+
+      <div class="review-summary" id="reviewSummary"></div>
+
+      <div class="review-form">
+        <div class="star-input" id="reviewStarsInput" role="group" aria-label="Chọn số sao">
+          <button type="button" class="rate-star" data-value="1" title="1 sao">☆</button>
+          <button type="button" class="rate-star" data-value="2" title="2 sao">☆</button>
+          <button type="button" class="rate-star" data-value="3" title="3 sao">☆</button>
+          <button type="button" class="rate-star" data-value="4" title="4 sao">☆</button>
+          <button type="button" class="rate-star" data-value="5" title="5 sao">☆</button>
+        </div>
+        <div class="small muted" id="reviewHint">Chọn 1–5 sao để gửi đánh giá.</div>
+        <textarea id="reviewComment" class="input" rows="2" maxlength="300"
+                  placeholder="Nhận xét (không bắt buộc) — VD: cơm nóng, sườn mềm..."></textarea>
+        <button type="button" class="btn btn-primary btn-block" id="reviewSubmitBtn">Gửi đánh giá</button>
+      </div>
+
+      <h3 style="margin:16px 0 8px">Bình luận</h3>
+      <ul class="review-list" id="reviewList"></ul>
+      <div class="empty-state" id="reviewEmpty">Chưa có đánh giá nào — hãy là người đầu tiên.</div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
