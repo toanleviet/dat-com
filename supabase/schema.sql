@@ -27,12 +27,15 @@ create table if not exists public.dishes (
 create index if not exists dishes_restaurant_idx on public.dishes (restaurant_id, sort_order);
 
 -- Snapshot dish_name/restaurant_name để đơn cũ không vỡ khi món bị xóa/đổi tên.
+-- person_id là định danh trình duyệt (localStorage) — tên đổi được nhưng đơn vẫn
+-- thuộc đúng người; person_name chỉ là nhãn hiển thị.
 create table if not exists public.orders (
   id              uuid primary key default gen_random_uuid(),
   dish_id         uuid references public.dishes(id) on delete set null,
   dish_name       text not null,
   restaurant_name text not null,
   person_name     text not null,
+  person_id       uuid,
   order_date      date not null,
   created_at      timestamptz not null default now(),
   constraint person_name_len check (char_length(person_name) between 1 and 40)
@@ -230,6 +233,18 @@ alter table public.dishes
 
 create index if not exists dishes_new_idx
   on public.dishes (restaurant_id, is_new desc, sort_order);
+
+-- =============================================================
+-- MIGRATION: Định danh người đặt (person_id)
+-- Chạy phần này nếu database đã tồn tại từ phiên bản trước.
+-- Chạy lại nhiều lần vẫn an toàn.
+-- =============================================================
+
+alter table public.orders
+  add column if not exists person_id uuid;
+
+create index if not exists orders_person_idx
+  on public.orders (order_date, person_id);
 
 -- ---------- (Tuỳ chọn) Tự xóa đơn cũ hơn 31 ngày bằng pg_cron ----------
 -- Chỉ chạy nếu project hỗ trợ extension pg_cron. Nếu lỗi, bỏ qua phần này

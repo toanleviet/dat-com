@@ -3,11 +3,13 @@ import { getSupabase } from "./supabase-client.js";
 import { attachDishImage } from "./placeholder.js";
 
 const KEY_PERSON = "dedatcom_person";
+const KEY_PERSON_ID = "dedatcom_person_id";
 const KEY_ORDERS = "dedatcom_orders";
 const MAX_NAME_LEN = 40;
 
 const state = {
   person: "",
+  personId: "",
   supabase: null,
   restaurants: [],
   activeRestaurantId: null,
@@ -132,8 +134,11 @@ function removeLocalOrder(id) {
   saveLocalOrders(readLocalOrders().filter((x) => x !== id));
 }
 
-function isMine(orderId) {
-  return readLocalOrders().includes(orderId);
+function isMine(order) {
+  if (typeof order === "string") return readLocalOrders().includes(order);
+  if (!order) return false;
+  if (state.personId && order.person_id === state.personId) return true;
+  return Boolean(order.id) && readLocalOrders().includes(order.id);
 }
 
 function orderLine(o) {
@@ -170,6 +175,29 @@ function hideError() {
 
 /* ---------------- Person ---------------- */
 
+/**
+ * Định danh trình duyệt: đơn gắn với id này, không gắn với tên.
+ * Đổi tên chỉ đổi nhãn `person_name` nên không sinh đơn trùng / không xoá nhầm.
+ */
+function ensurePersonId() {
+  let id = "";
+  try {
+    id = localStorage.getItem(KEY_PERSON_ID) || "";
+  } catch {
+    id = "";
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    id = crypto.randomUUID();
+    try {
+      localStorage.setItem(KEY_PERSON_ID, id);
+    } catch {
+      /* chế độ riêng tư chặn storage: vẫn dùng id trong RAM cho phiên này */
+    }
+  }
+  state.personId = id;
+  return id;
+}
+
 function setPerson(name, { openModal = false } = {}) {
   state.person = name;
   if (name) {
@@ -202,16 +230,36 @@ function openNameModal() {
   setTimeout(() => el.nameInput.focus(), 50);
 }
 
-el.nameForm.addEventListener("submit", (e) => {
+el.nameForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const name = el.nameInput.value.trim().slice(0, MAX_NAME_LEN);
+  const name = el.nameInput.value.trim().replace(/\s+/g, " ").slice(0, MAX_NAME_LEN);
   if (!name) {
     el.nameInput.focus();
     return;
   }
-  const isNew = name !== state.person;
+  const prevName = state.person;
+  const isNew = name !== prevName;
   setPerson(name);
-  if (isNew) toast(`Xin chào ${name}!`, "success");
+  if (!isNew || !state.supabase || !state.personId) return;
+
+  const mine = myTodayOrders();
+  if (mine.length) {
+    const { error } = await state.supabase
+      .from("orders")
+      .update({ person_name: name })
+      .eq("order_date", todayISO())
+      .eq("person_id", state.personId);
+    if (error) {
+      toast("Đã đổi tên, nhưng chưa cập nhật được đơn cũ: " + error.message, "error");
+      return;
+    }
+    mine.forEach((o) => {
+      o.person_name = name;
+    });
+    renderOrders();
+    refreshMineUI();
+  }
+  toast(`Xin chào ${name}!`, "success");
 });
 
 el.personChip.addEventListener("click", () => openNameModal());
@@ -271,7 +319,7 @@ function sortDishes(list) {
 async function loadOrders() {
   const { data, error } = await state.supabase
     .from("orders")
-    .select("id, dish_id, dish_name, restaurant_name, person_name, order_date, created_at")
+    .select("id, dish_id, dish_name, restaurant_name, person_name, person_id, order_date, created_at")
     .eq("order_date", todayISO())
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -501,8 +549,13 @@ function renderDishes() {
 /* ---------------- Ordering (1 món / người / ngày) ---------------- */
 
 function myTodayOrders() {
-  if (!state.person) return [];
-  return state.orders.filter((o) => o.person_name === state.person);
+  if (!state.person && !state.personId) return [];
+  const localIds = readLocalOrders();
+  return state.orders.filter(
+    (o) =>
+      (state.personId && o.person_id === state.personId) ||
+      (o.id && localIds.includes(o.id))
+  );
 }
 
 /** Tìm món ở menu đang xem trước, sau đó tới cache toàn bộ món (vòng quay). */
@@ -544,14 +597,14 @@ async function placeOrder(dishId, { replace = false } = {}) {
 
   try {
     if (replace && mine.length) {
+      const mineIds = mine.map((o) => o.id);
       const { error: delError } = await state.supabase
         .from("orders")
         .delete()
-        .eq("order_date", todayISO())
-        .eq("person_name", state.person);
+        .in("id", mineIds);
       if (delError) throw delError;
 
-      const removedIds = new Set(mine.map((o) => o.id));
+      const removedIds = new Set(mineIds);
       state.orders = state.orders.filter((o) => !removedIds.has(o.id));
       saveLocalOrders(readLocalOrders().filter((id) => !removedIds.has(id)));
     }
@@ -563,9 +616,10 @@ async function placeOrder(dishId, { replace = false } = {}) {
         dish_name: dish.name,
         restaurant_name: restaurant ? restaurant.name : "",
         person_name: state.person,
+        person_id: state.personId || null,
         order_date: todayISO(),
       })
-      .select("id, dish_id, dish_name, restaurant_name, person_name, order_date, created_at")
+      .select("id, dish_id, dish_name, restaurant_name, person_name, person_id, order_date, created_at")
       .single();
     if (error) throw error;
 
@@ -575,6 +629,7 @@ async function placeOrder(dishId, { replace = false } = {}) {
       dish_name: dish.name,
       restaurant_name: restaurant ? restaurant.name : "",
       person_name: state.person,
+      person_id: state.personId || null,
       order_date: todayISO(),
       created_at: new Date().toISOString(),
     };
@@ -608,7 +663,9 @@ async function addOrder(dishId) {
 
   const mine = myTodayOrders();
   if (mine.length) {
-    const current = mine[0];
+    const current = mine
+      .slice()
+      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
     const target = findDishAnywhere(dishId);
     if (!target) return;
     if (current.dish_id === dishId) {
@@ -1423,7 +1480,7 @@ function renderOrders() {
 
   el.orderList.innerHTML = orders
     .map((o) => {
-      const mine = isMine(o.id);
+      const mine = isMine(o);
       return `
       <li class="order-item${mine ? " mine" : ""}" data-id="${escapeHtml(o.id)}">
         <span class="order-text"><b>${escapeHtml(o.dish_name)}</b>_(${escapeHtml(
@@ -1624,6 +1681,7 @@ el.retryBtn.addEventListener("click", () => loadAll());
 async function init() {
   el.todayLabel.textContent = formatTodayLabel();
 
+  ensurePersonId();
   const savedPerson = (localStorage.getItem(KEY_PERSON) || "").trim();
   setPerson(savedPerson);
   if (!savedPerson) openNameModal();

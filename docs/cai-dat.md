@@ -48,7 +48,7 @@ hoặc `npx serve` nếu không có Python.
 | --- | --- | --- |
 | `restaurants` | `id`, `name`, `sort_order` | Mỗi dòng là 1 menu (quán). `name` unique. |
 | `dishes` | `id`, `restaurant_id`, `name`, `image_url`, `is_available`, `is_new`, `sort_order`, `created_at` | `is_new` = nhãn NEW, món NEW luôn đứng đầu menu. |
-| `orders` | `id`, `dish_id`, `dish_name`, `restaurant_name`, `person_name`, `order_date` | `dish_name`/`restaurant_name` là snapshot để đơn cũ không vỡ khi xóa món. |
+| `orders` | `id`, `dish_id`, `dish_name`, `restaurant_name`, `person_name`, `person_id`, `order_date` | `dish_name`/`restaurant_name` là snapshot để đơn cũ không vỡ khi xóa món. `person_id` = định danh trình duyệt (đổi tên không phá đơn), `person_name` chỉ để hiển thị. |
 | `reviews` | `id`, `dish_id`, `dish_name`, `person_name`, `rating`, `comment` | `rating` 1–5, comment tối đa 300 ký tự. |
 | `chat_messages` | `id`, `person_name`, `message` | Tối đa 300 ký tự/tin. |
 
@@ -65,6 +65,7 @@ nhất là chạy lại toàn bộ file — các khối đều idempotent.
 | `MIGRATION: Đánh giá món` | Bảng `reviews` chưa có (bản cũ trước tính năng đánh giá) |
 | `MIGRATION: Chat nội bộ` | Bảng `chat_messages` chưa có |
 | `MIGRATION: Nhãn NEW cho món mới` | Cột `dishes.is_new` chưa có / index `dishes_new_idx` cần thêm |
+| `MIGRATION: Định danh người đặt (person_id)` | Cột `orders.person_id` chưa có / index `orders_person_idx` cần thêm |
 
 Khối NEW:
 
@@ -77,7 +78,7 @@ create index if not exists dishes_new_idx
 ```
 
 > **Thứ tự deploy:** chạy SQL **trước** khi đẩy code mới. Code mới `select("... is_new")`
-> sẽ lỗi PostgREST `42703 column dishes.is_new does not exist` nếu cột chưa tồn tại.
+> hoặc `person_id` sẽ lỗi PostgREST `42703 column ... does not exist` nếu cột chưa tồn tại.
 > Nếu lỡ deploy code trước: chạy khối migration rồi `Ctrl+F5` trên trình duyệt.
 
 Phần realtime đã được bọc `do $$ ... $$` nên không còn lỗi

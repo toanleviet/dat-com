@@ -29,6 +29,9 @@
 | "Không kết nối được Supabase" | Sai URL/key, hoặc chưa chạy `schema.sql`. Xem Console trình duyệt (F12). |
 | Danh sách không tự cập nhật giữa các máy | Chưa bật realtime cho `orders` — chạy lại phần realtime trong `schema.sql`. |
 | `column dishes.is_new does not exist` (mã 42703) | Database chưa có cột NEW — chạy khối `MIGRATION: Nhãn NEW cho món mới` trong `schema.sql`, rồi Ctrl+F5. |
+| `column orders.person_id does not exist` (mã 42703) | Database chưa có cột định danh người đặt — chạy khối `MIGRATION: Định danh người đặt (person_id)` trong `schema.sql`, rồi Ctrl+F5. |
+| Đổi tên xong vẫn thấy món cũ nhưng không đổi được / bị báo "Bạn đã chọn món rồi" | Đúng hành vi: đơn gắn với trình duyệt, đổi tên không tạo đơn mới. Bấm **+** món khác → chọn **YES, đổi** để thay món. |
+| Xoá dữ liệu trang (localStorage) → trang coi bạn là người mới | Đơn cũ vẫn nằm trong danh sách; xoá tay bằng ✕ rồi đặt lại, hoặc dùng nút đổi món nếu đã đặt. |
 | Tick NEW ở Setup nhưng trang đặt cơm không đổi | Tải lại trang (Ctrl+F5); kiểm tra Console xem có lỗi `42703` ở trên không. |
 | Bấm ★ không thấy bình luận / lỗi `relation "reviews" does not exist` | Chưa chạy phần `MIGRATION: Đánh giá món` trong `schema.sql`. |
 | Chat báo "Chưa tạo bảng chat_messages" | Chưa chạy phần `MIGRATION: Chat nội bộ` trong `schema.sql`. |

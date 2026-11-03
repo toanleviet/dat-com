@@ -6,6 +6,12 @@
 
 1. Lần đầu nhập tên (lưu vào `localStorage` key `dedatcom_person`, lần sau tự điền).
    Bấm chip tên trên header để đổi tên.
+   - **Đổi tên an toàn**: đơn gắn với **trình duyệt** (id ngẫu nhiên lưu ở
+     `dedatcom_person_id`), không gắn với chuỗi tên. Đổi tên chỉ đổi nhãn hiển thị:
+     không sinh đơn thứ 2, không mất món đã chọn, và không ảnh hưởng đơn của người
+     khác (kể cả khi hai người trùng tên).
+   - Dùng chung máy hoặc xoá dữ liệu trình duyệt thì mất liên kết với đơn cũ —
+     đơn vẫn nằm trong danh sách, xoá tay bằng nút ✕ nếu cần.
 2. Bấm **Menu Hải Nam** / **Menu Dejavu** → bấm **+** trên món để đặt.
    - **Lọc món**: ô tìm kiếm phía trên danh sách món. Gõ "cơm" hoặc "com" (không dấu)
      đều lọc đúng; `Esc` hoặc nút ✕ để xoá lọc. Bộ đếm hiện `3/6 món`.
