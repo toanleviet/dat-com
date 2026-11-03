@@ -18,7 +18,7 @@ Cơm sườn_(Hải Nam) - An
 - **Đánh giá món** — chấm 1–5 sao, bình luận, điểm trung bình ngay trên card.
 - **Nhãn NEW** — tick ở trang Setup: món viền gradient chạy, nhãn NEW phát sáng, luôn đứng đầu menu.
 - **Gợi ý món theo thời tiết TP.HCM** — panel trái hiện thời tiết hiện tại + mưa chiều tối,
-  đầu danh sách món có gợi ý (luật cứng + lời khuyên AI, tuỳ chọn).
+  đầu danh sách món gợi ý tối đa 10 món hợp thời tiết (luật từ khoá, không cần API key).
 - **Chat nội bộ** — một phòng chat chung cho cả công ty.
 - **Import CSV** — thêm hàng loạt món, có xem trước và bỏ qua món trùng.
 - **Copy danh sách** — xuất text đúng cú pháp để dán vào Word/Slack.

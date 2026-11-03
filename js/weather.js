@@ -21,6 +21,8 @@ const HOT_KEYWORDS = [
   "cuon",
   "che",
   "sinh to",
+  "do chua",
+  "sua chua",
 ];
 const COOL_KEYWORDS = [
   "canh",
@@ -40,6 +42,9 @@ const COOL_KEYWORDS = [
   "banh canh",
   "ramen",
   "udon",
+  "xao",
+  "rim",
+  "tiem",
 ];
 
 const WMO = [
@@ -246,7 +251,9 @@ export function adviceTemplate(cls, weather) {
     case "hot":
       return `Trời nóng${temp != null ? ` (~${temp}°C)` : ""} — ưu tiên món trộn, gỏi, cuốn cho mát.`;
     case "humid":
-      return "Nóng ẩm dễ ngán — món trộn, gỏi, đồ chua nhẹ sẽ dễ ăn hơn món nhiều dầu mỡ.";
+      return (weather?.evening?.maxRain ?? 0) >= 40
+        ? "Nóng ẩm, chiều có thể mưa — món trộn, gỏi, hoặc món nước nhẹ bụng đều hợp."
+        : "Nóng ẩm dễ ngán — món trộn, gỏi, đồ chua nhẹ sẽ dễ ăn hơn món nhiều dầu mỡ.";
     case "cool":
       return `Trời mát${temp != null ? ` (~${temp}°C)` : ""} — món nước, canh, nướng là lựa chọn hợp lý.`;
     default:
@@ -272,7 +279,7 @@ export function matchesKeyword(hay, key) {
 export function pickWeatherDishes(dishes, weather, stats, limit = 10) {
   const cls = classifyWeather(weather);
   const list = Array.isArray(dishes) ? dishes : [];
-  if (!list.length) return { items: [], cls, relaxed: false };
+  if (!list.length) return { items: [], cls };
 
   const rainyEvening = (weather?.evening?.maxRain ?? 0) >= 40;
   let keys = [];
@@ -289,14 +296,9 @@ export function pickWeatherDishes(dishes, weather, stats, limit = 10) {
     return { dish: d, hits, score: hits.length * 3 + ratingOf(stats, d.id) };
   });
 
-  let matched = scored.filter((s) => s.hits.length);
-  let relaxed = false;
-  if (!matched.length) {
-    relaxed = true;
-    matched = scored;
-  }
-
+  // Chỉ trả món khớp từ khoá thời tiết — không lấp thêm món ngoài luật.
+  const matched = scored.filter((s) => s.hits.length);
   matched.sort((a, b) => b.score - a.score || ratingOf(stats, a.dish.id) - ratingOf(stats, b.dish.id));
-  const items = matched.slice(0, limit).map((s) => ({ dish: s.dish, matched: s.hits.length > 0 }));
-  return { items, cls, relaxed };
+  const items = matched.slice(0, limit).map((s) => ({ dish: s.dish }));
+  return { items, cls };
 }

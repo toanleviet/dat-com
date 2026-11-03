@@ -44,13 +44,5 @@
 | Danh sách trống dù vừa đặt | Máy đó có ngày khác (múi giờ) — kiểm tra đồng hồ hệ thống. |
 | Món NEW không có viền chạy | Trình duyệt cũ không hỗ trợ `@property` hoặc đang bật giảm chuyển động — viền màu tĩnh vẫn hiện, không phải lỗi. |
 | Panel thời tiết trống / ẩn | Không gọi được `api.open-meteo.com` (chặn mạng/firewall). Block gợi ý món cũng ẩn; trang đặt cơm không bị ảnh hưởng. |
-| Gợi ý món không có câu lời khuyên AI | Chưa deploy Edge Function `weather-suggest` hoặc chưa set `OPENROUTER_API_KEY`. Trang vẫn hiện câu gợi ý theo luật thời tiết. Xem log ở Dashboard → Edge Functions. |
-| Trên localhost không thấy câu lời khuyên AI | Mở DevTools → Network, xem request `.../functions/v1/weather-suggest`: `404` → chưa deploy function; `CORS`/`Failed to fetch` → thêm `http://localhost:8000` vào `ALLOWED_ORIGIN` (hoặc `*`); `502` → đọc `detail`. Trang tự thử lại sau ~2 phút. |
-| Lời khuyên AI ghi "(cũ)" | AI đang lỗi/hết lượt nên trang dùng lại lời khuyên gần nhất (< 24h). Tự thử lại sau ~1 giờ; xoá `dedatcom_ai_suggest_v1` trong localStorage nếu muốn thử ngay. |
-| Khung Hỏi AI báo lỗi | Đọc bong bóng đỏ — lý do ngắn (chưa deploy function / key sai / AI quá tải). Hội thoại nằm ở `dedatcom_ai_chat` trong localStorage, bấm **Xoá** để reset. |
-| Function trả 502 | Nhà cung cấp AI lỗi/hết quota/sai model. Đọc `status` + `detail` + `hint` + `tried` trong response, soát secret rồi xem log ở Dashboard → Edge Functions. |
-| Function trả 502 + `status: 404` | Model không tồn tại/hết lượt free ở OpenRouter. Đổi `LLM_MODEL`/`LLM_MODELS` sang model khác (xem danh sách ở <https://openrouter.ai/models?max_price=0>). Không cần deploy lại. |
-| Function trả 502 + `status: 429` lặp lại | Hết hạn mức free (request/phút hoặc /ngày). Function đã tự retry 2 lần; thêm model vào `LLM_MODELS` để tự chuyển, hoặc chờ hạn mức reset. |
-| Function trả 502 + `status: 401`/`403` | `OPENROUTER_API_KEY` sai/hết hiệu lực — tạo key mới ở <https://openrouter.ai/keys> rồi `supabase secrets set OPENROUTER_API_KEY=...`. |
-| Function trả 502 + `status: 402` | OpenRouter báo hết credit cho model đó — đổi `LLM_MODELS`. |
-| Gợi ý AI trùng/không đổi sau khi sửa thời tiết | Cache 60 phút theo ngày + loại thời tiết + danh sách món. Xoá `dedatcom_ai_suggest_v1` trong localStorage nếu cần làm mới ngay. |
+| Block gợi ý món không hiện | Không có món nào trong menu khớp từ khoá thời tiết (mưa → món nước, nóng → món mát). Thêm món phù hợp hoặc mở rộng `COOL_KEYWORDS`/`HOT_KEYWORDS` trong `js/weather.js`. |
+| Gợi ý ít hơn 10 món | Đúng thiết kế: chỉ lấy món khớp từ khoá, không bổ sung món ngoài luật. |

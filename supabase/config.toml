@@ -1,8 +1,5 @@
 # Supabase CLI config — được commit kèm repo.
-# project_id cho phép chạy `supabase functions deploy weather-suggest` mà không cần --remote.
-# Lưu ý: KHÔNG đặt secret ở đây; dùng `supabase secrets set ...`.
+# project_id cho phép chạy `supabase db push` / `supabase link` mà không cần truyền ref.
+# Lưu ý: KHÔNG đặt secret ở đây.
 
 project_id = "wqnhforhekyyyfgbbfsd"
-
-[functions.weather-suggest]
-verify_jwt = false

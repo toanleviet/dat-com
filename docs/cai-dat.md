@@ -85,31 +85,12 @@ create index if not exists dishes_new_idx
 Phần realtime đã được bọc `do $$ ... $$` nên không còn lỗi
 `42710: relation ... is already member of publication` khi chạy lần hai.
 
-## 5. Gợi ý món bằng AI (tuỳ chọn)
+## 5. Thời tiết & gợi ý món
 
-Panel thời tiết dùng **Open-Meteo** (miễn phí, không cần key) — không phải cấu hình gì thêm,
-toạ độ TP.HCM đã đặt trong `js/config.js` (`WEATHER_LAT`, `WEATHER_LON`, `WEATHER_TZ`).
+Panel thời tiết dùng **Open-Meteo** (miễn phí, không cần key, không cần đăng ký) — không phải
+cấu hình gì thêm. Toạ độ TP.HCM đã đặt sẵn trong `js/config.js`:
+`WEATHER_LAT`, `WEATHER_LON`, `WEATHER_CITY`, `WEATHER_TZ`.
 
-Phần **lời khuyên AI** cần một Edge Function để giữ key LLM ở server:
-
-```powershell
-cd D:\DatCom      # CLI tìm file tương đối từ thư mục làm việc!
-supabase login
-supabase secrets set OPENROUTER_API_KEY=sk-or-v1-...
-# tuỳ chọn: model dự phòng thử lần lượt
-# supabase secrets set LLM_MODELS=openrouter/free,google/gemma-3-27b-it:free
-supabase functions deploy weather-suggest
-```
-
-Mặc định dùng **OpenRouter** với model `openrouter/free` (router tự chọn model free còn lượt).
-Cùng function này phục vụ cả **lời khuyên thời tiết** lẫn **khung Hỏi AI** (`mode: "suggest" | "chat"`,
-body ≤ 8KB, gửi kèm menu của cả hai quán). Gói free có giới hạn request/phút và /ngày; khi hết lượt,
-trang dùng lời khuyên AI đã cache (nhãn "cũ") hoặc gợi ý theo luật. Đổi model:
-`supabase secrets set LLM_MODEL(S)=...` (không cần deploy lại).
-
-Chi tiết + hợp đồng request/response: [`supabase/functions/weather-suggest/README.md`](../supabase/functions/weather-suggest/README.md).
-
-> **Không bật AI thì sao?** Trang vẫn chạy bình thường: block "Món gợi ý theo thời tiết"
-> dùng luật cứng trong `js/weather.js` (nóng/ẩm → món trộn, gỏi; mưa/lạnh → canh, lẩu, nướng)
-> và câu giải thích theo mẫu. Chỉ phần câu lời khuyên là khác đi.
-> Key LLM **không bao giờ** có trong code client.
+Gợi ý món chạy **hoàn toàn phía trình duyệt** bằng luật từ khoá trong `js/weather.js`
+(`COOL_KEYWORDS` cho mưa/mát, `HOT_KEYWORDS` cho nóng/nóng ẩm). Không có server, không có
+API key, không tốn phí. Muốn chỉnh gợi ý thì sửa 2 mảng từ khoá đó (viết không dấu, chữ thường).
