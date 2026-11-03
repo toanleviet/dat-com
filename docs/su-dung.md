@@ -36,6 +36,33 @@
 Danh sách chính chỉ hiển thị đơn của **ngày hiện tại theo giờ máy** (trường
 `order_date = YYYY-MM-DD` local). Sang ngày mới danh sách tự trống.
 
+## Thời tiết & món gợi ý
+
+- Cột **bên trái** (mobile: đầu trang) hiện thời tiết **TP.HCM**: nhiệt độ + độ ẩm hiện tại,
+  4 khung giờ kế tiếp (nhiệt độ · độ ẩm · % mưa), và tóm tắt **chiều tối 17–20h**
+  (nhiệt độ TB, độ ẩm TB, xác suất mưa cao nhất). Sau 20h thì chuyển thành dự báo **chiều mai**.
+- Dữ liệu lấy từ Open-Meteo, tự cập nhật mỗi ~10 phút (cache trình duyệt). Không có mạng
+  thì panel hiện dữ liệu cũ (ghi rõ giờ) hoặc ẩn đi — trang đặt cơm vẫn dùng bình thường.
+- Block **"🍽️ Món gợi ý theo thời tiết"** nằm **trên đầu danh sách món**:
+  - Một câu lời khuyên (1–2 câu) đọc thời tiết và **toàn bộ menu của cả Hải Nam và Dejavu**.
+  - Món gợi ý do AI chọn trong menu đang bán (tối đa 6); nếu AI tạm lỗi thì dùng luật thời tiết
+    (nóng → trộn/gỏi/cuốn; mưa hoặc mát → món nước như mì, bún, phở, hủ tiếu, miến, cháo,
+    canh, súp, lẩu) và lời khuyên mẫu.
+  - Tổng **tối đa 10 món**: món AI chọn xếp trước, sau đó bổ sung các món hợp thời tiết còn lại
+    (không trùng).
+  - Bấm **+** ngay trên chip gợi ý để đặt món — vẫn tuân thủ **1 món/người/ngày**, và món
+    không thuộc menu đang mở có ghi kèm tên quán.
+
+## Hỏi AI
+
+- Khung **🤖 Hỏi AI** nằm ngay **dưới card Thời tiết** (cột trái; mobile: đầu trang).
+- Gõ câu hỏi tự do, vd *"tôi dị ứng hải sản, ăn gì?"*, *"món nào nhẹ bụng?"*, *"hôm nay mưa,
+  có gì nóng?"*. AI trả lời dựa trên thời tiết hiện tại + menu của **cả hai quán**.
+- AI chỉ tư vấn trong menu đang bán, không bịa món.
+- Lịch sử hội thoại **chỉ lưu trên máy bạn** (`localStorage`), tối đa 20 tin, tự xoá sau 7 ngày
+  hoặc khi bấm **Xoá**. Câu hỏi được gửi lên máy chủ AI (không kèm tên người dùng).
+- Khi AI lỗi/hết lượt, bong bóng trả lời sẽ ghi lý do ngắn; trang không bị treo.
+
 ## Nhãn NEW cho món mới
 
 Món mới nhập về có thể được gắn nhãn **NEW** để mọi người dễ thấy.

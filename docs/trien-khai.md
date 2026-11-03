@@ -42,9 +42,12 @@ css/style.css
 js/config.js                  SUPABASE_URL, SUPABASE_ANON_KEY (điền tay)
 js/supabase-client.js         khởi tạo client
 js/app.js                     đặt cơm + list realtime + copy + vòng quay + đánh giá
+js/weather.js                 thời tiết Open-Meteo (TP.HCM) + luật gợi ý món
+js/ai-suggest.js              gọi Edge Function gợi ý món + cache 60 phút
 js/setup.js                   CRUD món + upload ảnh + import CSV + xóa dữ liệu
 js/placeholder.js             sinh ảnh placeholder từ tên món
 supabase/schema.sql           bảng + RLS + bucket + realtime + seed + migrations
+supabase/functions/weather-suggest/   Edge Function gợi ý món bằng LLM (tuỳ chọn)
 supabase/mau-import-mon.csv   file CSV mẫu để tham khảo format
 docs/                         tài liệu chi tiết
 README.md

@@ -14,3 +14,4 @@ desktop.ini
 # Bản nháp / file tạm
 tmp/
 *.bak
+supabase/.temp/

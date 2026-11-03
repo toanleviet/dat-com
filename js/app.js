@@ -1,11 +1,25 @@
-import { isConfigured } from "./config.js";
+import { isConfigured, WEATHER_CITY } from "./config.js";
 import { getSupabase } from "./supabase-client.js";
 import { attachDishImage } from "./placeholder.js";
+import {
+  fetchWeather,
+  classifyWeather,
+  pickWeatherDishes,
+  adviceTemplate,
+} from "./weather.js";
+import { getAiSuggestion, askAiChat } from "./ai-suggest.js";
 
 const KEY_PERSON = "dedatcom_person";
 const KEY_PERSON_ID = "dedatcom_person_id";
 const KEY_ORDERS = "dedatcom_orders";
+const KEY_AI_CHAT = "dedatcom_ai_chat";
 const MAX_NAME_LEN = 40;
+const AI_RETRY_COOLDOWN_MS = 60 * 60 * 1000;
+const AI_RETRY_AFTER_ERROR_MS = 2 * 60 * 1000;
+const AI_CHAT_MAX = 20;
+const AI_CHAT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const AI_PICK_LIMIT = 6;
+const PICKS_TOTAL = 10;
 
 const state = {
   person: "",
@@ -25,6 +39,15 @@ const state = {
   reviewBusy: false,
   allDishes: [],
   dishFilter: "",
+  weather: null,
+  weatherPicks: [],
+  weatherClass: "mild",
+  aiSuggestion: null,
+  aiError: "",
+  aiLastTriedAt: 0,
+  aiChat: [],
+  aiChatBusy: false,
+  weatherBusy: false,
   chat: [],
   chatBusy: false,
   chatOpen: true,
@@ -92,6 +115,24 @@ const el = {
   mainContent: $("mainContent"),
   lockNotice: $("lockNotice"),
   lockEnterBtn: $("lockEnterBtn"),
+  weatherCity: $("weatherCity"),
+  weatherIcon: $("weatherIcon"),
+  weatherTemp: $("weatherTemp"),
+  weatherLabel: $("weatherLabel"),
+  weatherMeta: $("weatherMeta"),
+  weatherHours: $("weatherHours"),
+  weatherEvening: $("weatherEvening"),
+  weatherUpdated: $("weatherUpdated"),
+  weatherPicks: $("weatherPicks"),
+  weatherAdvice: $("weatherAdvice"),
+  weatherPicksList: $("weatherPicksList"),
+  aiChatList: $("aiChatList"),
+  aiChatEmpty: $("aiChatEmpty"),
+  aiChatStatus: $("aiChatStatus"),
+  aiChatForm: $("aiChatForm"),
+  aiChatInput: $("aiChatInput"),
+  aiChatSendBtn: $("aiChatSendBtn"),
+  aiChatClearBtn: $("aiChatClearBtn"),
 };
 
 /* ---------------- Helpers ---------------- */
@@ -543,7 +584,334 @@ function renderDishes() {
     btn.addEventListener("click", () => openReviewModal(btn.dataset.review));
   });
 
+  renderWeatherPicks();
   refreshMineUI();
+}
+
+/* ---------------- Thời tiết & gợi ý món ---------------- */
+
+/** Mọi nút "+" (trong lưới món và trong block gợi ý theo thời tiết). */
+function allAddButtons() {
+  const nodes = [];
+  if (el.weatherPicks) nodes.push(...el.weatherPicks.querySelectorAll("[data-add]"));
+  if (el.dishArea) nodes.push(...el.dishArea.querySelectorAll("[data-add]"));
+  return nodes;
+}
+
+function computeWeatherPicks() {
+  const pool = state.allDishes && state.allDishes.length ? state.allDishes : state.dishes;
+  const res = pickWeatherDishes(pool, state.weather, state.reviewStats, PICKS_TOTAL);
+  state.weatherPicks = res.items;
+  state.weatherClass = res.cls;
+  return res;
+}
+
+/** So tên món chịu được thừa khoảng trắng / khác hoa-thường. */
+function normalizeDishKey(name) {
+  return String(name || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** Tìm món theo tên AI trả: ưu tiên danh sách mọi quán, sau đó menu đang mở. */
+function matchDishByName(name, pool, menu) {
+  const target = normalizeDishKey(name);
+  if (!target) return null;
+  return (
+    (pool || []).find((d) => normalizeDishKey(d.name) === target) ||
+    (menu || []).find((d) => normalizeDishKey(d.name) === target) ||
+    null
+  );
+}
+
+function renderWeatherPanel() {
+  const w = state.weather;
+  if (!el.weatherIcon || !w) return;
+
+  if (el.weatherCity) el.weatherCity.textContent = w.city || WEATHER_CITY;
+  el.weatherIcon.textContent = w.current.icon;
+  el.weatherTemp.textContent = `${w.current.temp}°`;
+  el.weatherLabel.textContent = w.current.label;
+  if (el.weatherMeta) {
+    el.weatherMeta.innerHTML = [
+      `💧 Độ ẩm ${w.current.humidity}%`,
+      w.evening.maxRain != null ? `🌧️ Mưa 17–20h ${w.evening.maxRain}%` : "",
+    ]
+      .filter(Boolean)
+      .map((t) => `<span>${escapeHtml(t)}</span>`)
+      .join("");
+  }
+
+  if (el.weatherHours) {
+    el.weatherHours.innerHTML = w.nextHours.length
+      ? w.nextHours
+          .map(
+            (h) => `
+        <div class="weather-hour">
+          <b>${escapeHtml(h.time)}</b>
+          <span>${h.temp}°C</span>
+          <span class="wh-meta">💧${h.humidity}% · 🌧️${h.rain}%</span>
+        </div>`
+          )
+          .join("")
+      : '<div class="small muted">Không có dự báo giờ tới.</div>';
+  }
+
+  if (el.weatherEvening) {
+    const e = w.evening;
+    if (e.avgTemp == null) {
+      el.weatherEvening.innerHTML = "";
+    } else {
+      const when = e.tomorrow ? "Chiều mai" : "Chiều tối";
+      el.weatherEvening.innerHTML = `<strong>${escapeHtml(when)} ${e.fromHour}–${e.toHour}h · ${escapeHtml(
+        e.icon
+      )} ${escapeHtml(e.label)}</strong>~${e.avgTemp}°C · ẩm ${e.avgHumidity ?? "?"}% · mưa ${
+        e.maxRain ?? "?"
+      }%`;
+    }
+  }
+
+  if (el.weatherUpdated) {
+    const t = new Date(w.fetchedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+    el.weatherUpdated.textContent = w.stale ? `Dữ liệu cũ (${t}) — không cập nhật được.` : `Cập nhật ${t}`;
+  }
+}
+
+function renderWeatherPicks() {
+  if (!el.weatherPicks) return;
+  if (!state.weather) {
+    el.weatherPicks.classList.add("hidden");
+    return;
+  }
+
+  const res = computeWeatherPicks();
+  const ai = state.aiSuggestion;
+  const pool = state.allDishes && state.allDishes.length ? state.allDishes : state.dishes;
+
+  const items = [];
+  const seen = new Set();
+  const add = (dish) => {
+    if (!dish || seen.has(dish.id) || items.length >= PICKS_TOTAL) return;
+    seen.add(dish.id);
+    items.push({ dish });
+  };
+
+  if (ai && ai.picks.length) {
+    let added = 0;
+    for (const name of ai.picks) {
+      if (added >= AI_PICK_LIMIT) break;
+      const dish = matchDishByName(name, pool, state.dishes);
+      if (!dish || seen.has(dish.id)) continue;
+      add(dish);
+      added++;
+    }
+  }
+
+  // Bổ sung món hợp thời tiết mà AI chưa chọn.
+  for (const { dish } of res.items) add(dish);
+
+  if (!items.length) {
+    el.weatherPicks.classList.add("hidden");
+    return;
+  }
+
+  el.weatherPicks.classList.remove("hidden");
+  if (el.weatherAdvice) {
+    el.weatherAdvice.textContent = ai && ai.advice ? ai.advice : adviceTemplate(res.cls, state.weather);
+  }
+
+  const restaurantsById = new Map(state.restaurants.map((r) => [r.id, r]));
+  el.weatherPicksList.innerHTML = items
+    .map(({ dish }) => {
+      const r = dish.restaurant_id ? restaurantsById.get(dish.restaurant_id) : null;
+      const sub = r && !state.dishes.some((d) => d.id === dish.id) ? r.name : "";
+      return `
+        <span class="pick-chip">
+          <span class="pick-name">${escapeHtml(dish.name)}</span>
+          ${sub ? `<span class="pick-sub">${escapeHtml(sub)}</span>` : ""}
+          <button type="button" class="add-btn" data-add="${escapeHtml(dish.id)}"
+                  data-name="${escapeHtml(dish.name)}"
+                  title="Thêm ${escapeHtml(dish.name)}" aria-label="Thêm ${escapeHtml(dish.name)}">+</button>
+        </span>`;
+    })
+    .join("");
+
+  el.weatherPicksList.querySelectorAll("[data-add]").forEach((btn) => {
+    btn.addEventListener("click", () => addOrder(btn.dataset.add));
+  });
+  refreshMineUI();
+}
+
+/** Danh sách món mọi quán (kèm tên quán) gửi cho AI; fallback về menu đang mở. */
+function dishPoolForAi() {
+  const pool = state.allDishes && state.allDishes.length ? state.allDishes : state.dishes;
+  const byId = new Map(state.restaurants.map((r) => [r.id, r.name]));
+  return pool.map((d) => ({ name: d.name, restaurant: byId.get(d.restaurant_id) || "" }));
+}
+
+function aiShouldRetry() {
+  if (state.aiSuggestion && !state.aiSuggestion.stale) {
+    return Date.now() - (state.aiLastTriedAt || 0) > AI_RETRY_COOLDOWN_MS;
+  }
+  // chưa có lời khuyên hoặc lần trước lỗi: thử lại, nhưng không dày hơn 1 lần / 2 phút
+  return Date.now() - (state.aiLastTriedAt || 0) > AI_RETRY_AFTER_ERROR_MS;
+}
+
+async function loadWeather() {
+  if (state.weatherBusy) return;
+  state.weatherBusy = true;
+  try {
+    state.weather = await fetchWeather();
+    renderWeatherPanel();
+    renderWeatherPicks();
+
+    if (!state.allDishes || !state.allDishes.length) {
+      try {
+        await ensureSpinPool();
+      } catch {
+        /* AI vẫn chạy với món của menu đang xem */
+      }
+    }
+
+    const pool = dishPoolForAi();
+    if (aiShouldRetry()) {
+      const ai = await getAiSuggestion({
+        weatherClass: state.weatherClass,
+        weather: state.weather,
+        dishes: pool,
+      });
+      state.aiLastTriedAt = Date.now();
+      if (ai && ai.error) {
+        state.aiError = ai.error;
+        renderWeatherPicks();
+      } else if (ai) {
+        state.aiSuggestion = ai;
+        state.aiError = "";
+        renderWeatherPicks();
+      }
+    }
+  } catch {
+    /* không lấy được thời tiết: ẩn panel, trang vẫn chạy bình thường */
+    if (el.weatherPicks) el.weatherPicks.classList.add("hidden");
+    const card = el.weatherIcon ? el.weatherIcon.closest(".weather-card") : null;
+    if (card) card.classList.add("hidden");
+  } finally {
+    state.weatherBusy = false;
+  }
+}
+
+/* ---------------- Chat AI ---------------- */
+
+function readAiChat() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(KEY_AI_CHAT) || "null");
+    if (!raw || !Array.isArray(raw.items) || typeof raw.savedAt !== "number") return [];
+    if (Date.now() - raw.savedAt > AI_CHAT_TTL_MS) {
+      localStorage.removeItem(KEY_AI_CHAT);
+      return [];
+    }
+    return raw.items
+      .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string")
+      .slice(-AI_CHAT_MAX);
+  } catch {
+    return [];
+  }
+}
+
+function saveAiChat() {
+  try {
+    localStorage.setItem(
+      KEY_AI_CHAT,
+      JSON.stringify({ savedAt: Date.now(), items: state.aiChat.slice(-AI_CHAT_MAX) })
+    );
+  } catch {
+    /* storage bị chặn: giữ trong RAM */
+  }
+}
+
+function renderAiChat({ scroll = false } = {}) {
+  if (!el.aiChatList) return;
+  const rows = state.aiChat;
+
+  if (el.aiChatEmpty) el.aiChatEmpty.classList.toggle("hidden", rows.length > 0);
+  el.aiChatList.innerHTML = rows
+    .map((m) => {
+      const isUser = m.role === "user";
+      const cls = isUser ? "chat-msg mine" : "chat-msg assistant" + (m.error ? " error" : "");
+      return `
+      <div class="${cls}">
+        <div class="chat-bubble">
+          ${isUser ? "" : '<div class="chat-author">AI</div>'}
+          <div class="chat-text">${escapeHtml(m.text)}</div>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  if (scroll) el.aiChatList.scrollTop = el.aiChatList.scrollHeight;
+}
+
+function setAiChatBusy(busy) {
+  state.aiChatBusy = busy;
+  if (el.aiChatSendBtn) el.aiChatSendBtn.disabled = busy;
+  if (el.aiChatStatus) {
+    el.aiChatStatus.classList.toggle("hidden", !busy);
+    el.aiChatStatus.textContent = busy ? "AI đang nghĩ..." : "";
+  }
+}
+
+function pushAiChat(role, text, extra = {}) {
+  state.aiChat.push({ role, text, at: Date.now(), ...extra });
+  if (state.aiChat.length > AI_CHAT_MAX) state.aiChat = state.aiChat.slice(-AI_CHAT_MAX);
+  saveAiChat();
+  renderAiChat({ scroll: true });
+}
+
+async function sendAiChat() {
+  if (!el.aiChatInput || state.aiChatBusy) return;
+  const question = el.aiChatInput.value.trim().slice(0, 300);
+  if (!question) {
+    el.aiChatInput.focus();
+    return;
+  }
+  if (!state.person) {
+    openNameModal();
+    return;
+  }
+
+  el.aiChatInput.value = "";
+  pushAiChat("user", question);
+
+  const history = state.aiChat.slice(0, -1).map((m) => ({ role: m.role, text: m.text }));
+  setAiChatBusy(true);
+  try {
+    const res = await askAiChat({
+      question,
+      history,
+      weatherClass: state.weatherClass,
+      weather: state.weather,
+      dishes: dishPoolForAi(),
+    });
+    if (res && res.reply) pushAiChat("assistant", res.reply);
+    else pushAiChat("assistant", (res && res.error) || "Không gọi được AI.", { error: true });
+  } catch (err) {
+    pushAiChat("assistant", String(err?.message || err || "Không gọi được AI."), { error: true });
+  } finally {
+    setAiChatBusy(false);
+  }
+}
+
+if (el.aiChatForm) {
+  el.aiChatForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    sendAiChat();
+  });
+}
+
+if (el.aiChatClearBtn) {
+  el.aiChatClearBtn.addEventListener("click", () => {
+    state.aiChat = [];
+    saveAiChat();
+    renderAiChat();
+  });
 }
 
 /* ---------------- Ordering (1 món / người / ngày) ---------------- */
@@ -701,7 +1069,7 @@ function refreshMineUI() {
   const mineDishIds = new Set(mine.map((o) => o.dish_id));
   const busy = state.pendingDishIds.size > 0;
 
-  el.dishArea.querySelectorAll("[data-add]").forEach((btn) => {
+  allAddButtons().forEach((btn) => {
     const dishId = btn.dataset.add;
     const selected = mineDishIds.has(dishId);
     const isPending = state.pendingDishIds.has(dishId);
@@ -1671,6 +2039,7 @@ async function loadAll() {
     state.loaded = true;
     syncPersonGates();
     subscribeRealtime();
+    loadWeather();
   } catch (err) {
     showError("Không kết nối được Supabase.", err.message || String(err));
   }
@@ -1680,6 +2049,9 @@ el.retryBtn.addEventListener("click", () => loadAll());
 
 async function init() {
   el.todayLabel.textContent = formatTodayLabel();
+
+  state.aiChat = readAiChat();
+  renderAiChat({ scroll: true });
 
   ensurePersonId();
   const savedPerson = (localStorage.getItem(KEY_PERSON) || "").trim();

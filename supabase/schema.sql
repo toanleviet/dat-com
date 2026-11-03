@@ -120,6 +120,8 @@ insert into public.restaurants (name, sort_order) values
 on conflict (name) do nothing;
 
 -- ---------- Seed: món mẫu (image_url = null -> hiện placeholder) ----------
+-- Chỉ seed khi database CHƯA có món nào. Chạy lại schema.sql không thêm lại
+-- các món mẫu đã bị bạn xóa/sửa tay.
 insert into public.dishes (restaurant_id, name, sort_order)
 select r.id, d.name, d.sort_order
 from (values
@@ -137,10 +139,7 @@ from (values
   ('Dejavu',  'Cơm trộn Hàn Quốc',     6)
 ) as d(restaurant_name, name, sort_order)
 join public.restaurants r on r.name = d.restaurant_name
-where not exists (
-  select 1 from public.dishes x
-  where x.restaurant_id = r.id and x.name = d.name
-);
+where not exists (select 1 from public.dishes);
 
 -- =============================================================
 -- MIGRATION: Đánh giá món (reviews)
