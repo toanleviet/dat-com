@@ -111,6 +111,9 @@ Danh sách chính chỉ hiển thị đơn của **ngày hiện tại theo giờ
 - **Để sau 15'**: ẩn 15 phút rồi nhắc lại (chỉ khi vẫn trong khung 16:30–18:00).
 - Mỗi ngày chỉ nhắc lại nếu bạn chưa đặt; đã đặt món thì không hiện. Thứ 7/CN không hiện.
 - Trạng thái lưu ở `localStorage` (`dedatcom_remind`); xoá key này nếu muốn thấy popup lại.
+- Nếu đã bật **🔔**, mỗi lần popup hiện cũng có **thông báo Windows** "🍚 Đặt cơm ae ơi!!!"
+  kèm số phút còn lại — hữu ích khi tab đang thu nhỏ. Thông báo chỉ tắt khi bạn bấm vào nó
+  (requireInteraction). Bấm vào thông báo → quay lại tab và mở popup.
 
 ## Thông báo chat
 

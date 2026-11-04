@@ -1688,6 +1688,11 @@ button { font: inherit; cursor: pointer; }
 
 .toast:hover { border-color: #7c3aed; box-shadow: 0 12px 34px rgba(124, 58, 237, .25); }
 
+/* Nhắc uống nước */
+.toast.water { border-left-color: #0ea5e9; }
+.toast.water:hover { border-color: #0ea5e9; box-shadow: 0 12px 34px rgba(14, 165, 233, .25); }
+.toast-avatar.water { background: #0ea5e9; }
+
 @keyframes toast-in {
   from { transform: translateX(110%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }

@@ -53,5 +53,5 @@
 | Popup 16:30 không hiện | Chưa nhập tên, đã đặt món hôm nay, ngoài khung 16:30–18:00, là cuối tuần, hoặc đã bấm "Để sau". Xoá key `dedatcom_remind` trong localStorage để thử lại. |
 | Trang Lịch sử trống | Chọn đúng tháng; kiểm tra Console (lỗi quyền `orders read` → chạy lại `schema.sql`). |
 | Không có toast khi có tin mới | Tin của chính bạn thì không toast; cũng cần chạy phần `MIGRATION: Chat nội bộ` và realtime cho bảng `chat_messages`. |
-| Không thấy thông báo trên Windows | 1) Trang phải là HTTPS/localhost (truy cập `http://<IP>` thì trình duyệt chặn). 2) Chưa bấm 🔔 / đã bấm Chặn. 3) Windows tắt thông báo cho Edge/Chrome hoặc bật Focus assist. 4) Tab đang mở (khi đó chỉ có toast trong trang). |
+| Không thấy thông báo trên Windows | 1) Trang phải là HTTPS/localhost (truy cập `http://<IP>` thì trình duyệt chặn). 2) Chưa bấm 🔔 / đã bấm Chặn. 3) Windows tắt thông báo cho Edge/Chrome hoặc bật Focus assist. 4) Tab đang mở (khi đó chat chỉ có toast trong trang; popup nhắc đặt cơm vẫn bắn thông báo). |
 | Nút 🔔 bị ẩn | Trình duyệt không hỗ trợ Notification API (rất cũ), hoặc trang chạy trên `http://` không bảo mật. |

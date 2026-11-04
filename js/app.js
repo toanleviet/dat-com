@@ -8,7 +8,7 @@ import {
   adviceTemplate,
   rainLevel,
 } from "./weather.js";
-import { isDateLocked, isPastCutoff, isReminderWindow, minutesToCutoff } from "./schedule.js";
+import { isDateLocked, isPastCutoff, isReminderWindow, minutesToCutoff, waterReminderHour } from "./schedule.js";
 
 const KEY_PERSON = "dedatcom_person";
 const KEY_PERSON_ID = "dedatcom_person_id";
@@ -45,6 +45,7 @@ const state = {
   locked: null,
   lockTimer: null,
   remindTimer: null,
+  waterTimer: null,
   chat: [],
   chatBusy: false,
   chatOpen: true,
@@ -898,6 +899,29 @@ function showReminder() {
   if (el.remindLeft) el.remindLeft.textContent = String(minutesToCutoff(new Date()));
   el.remindOverlay.classList.remove("hidden");
   saveRemind({ ...readRemind(), date: todayISO(), shown: true });
+  notifyOrderReminder();
+}
+
+/** Bắn thông báo hệ điều hành kèm popup; bấm vào thì quay lại tab và mở popup. */
+function notifyOrderReminder() {
+  if (!notifEnabled()) return;
+  const left = minutesToCutoff(new Date());
+  try {
+    const n = new Notification("🍚 Đặt cơm ae ơi!!!", {
+      body: `Hôm nay chốt lúc ${CUTOFF_HOUR}:00 — còn ${left} phút. Đặt ngay kẻo lỡ!`,
+      tag: `remind-${todayISO()}`,
+      requireInteraction: true,
+      icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍚</text></svg>",
+      silent: false,
+    });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+      if (el.remindOverlay) el.remindOverlay.classList.remove("hidden");
+    };
+  } catch {
+    /* một số trình duyệt ném lỗi nếu thiếu service worker — bỏ qua */
+  }
 }
 
 function maybeShowReminder() {
@@ -982,8 +1006,8 @@ function renderNotifButton() {
   el.notifBtn.title = denied
     ? "Trình duyệt đã chặn thông báo — mở biểu tượng ổ khoá để cho phép"
     : on
-    ? "Đang bật thông báo tin nhắn (bấm để tắt)"
-    : "Bật thông báo khi có tin nhắn mới";
+    ? "Đang bật thông báo desktop (bấm để tắt)"
+    : "Bật thông báo khi có tin nhắn mới / tới giờ đặt cơm";
   el.notifBtn.setAttribute("aria-pressed", String(on));
 }
 
@@ -999,7 +1023,7 @@ async function toggleNotifications() {
       /* bỏ qua */
     }
     renderNotifButton();
-    toast("Đã tắt thông báo tin nhắn.", "");
+    toast("Đã tắt thông báo desktop.", "");
     return;
   }
 
@@ -1071,7 +1095,7 @@ function maybeAskNotifications() {
   // Không xin quyền tự động (trình duyệt sẽ chặn); nháy nút 🔔 để mời bấm.
   if (el.notifBtn) {
     el.notifBtn.classList.add("hint-pulse");
-    el.notifBtn.title = "Bật thông báo để nhận tin nhắn khi thu nhỏ tab";
+    el.notifBtn.title = "Bật thông báo để nhận tin nhắn và nhắc đặt cơm khi thu nhỏ tab";
     setTimeout(() => el.notifBtn.classList.remove("hint-pulse"), 8000);
   }
 }
@@ -1136,6 +1160,100 @@ function showChatToast(row) {
     remove();
     scrollToChat(row.id);
   });
+}
+
+/* ---------------- Nhắc uống nước mỗi giờ ---------------- */
+
+const KEY_WATER_LAST = "dedatcom_water_last";
+const WATER_TOAST_LIFE_MS = 10000;
+
+function readLastWater() {
+  try {
+    return localStorage.getItem(KEY_WATER_LAST) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveLastWater(key) {
+  try {
+    localStorage.setItem(KEY_WATER_LAST, key);
+  } catch {
+    /* storage bị chặn */
+  }
+}
+
+/** Khóa "YYYY-MM-DD-H" của giờ nhắc hiện tại; "" nếu ngoài khung 9:00–18:00 hoặc nghỉ trưa. */
+function waterKeyFor(now = new Date()) {
+  const hour = waterReminderHour(now);
+  return hour === null ? "" : `${todayISO()}-${hour}`;
+}
+
+function showWaterToast(hour) {
+  if (!el.toastStack) return;
+  const item = document.createElement("button");
+  item.type = "button";
+  item.className = "toast water";
+  item.dataset.water = "1";
+
+  const av = document.createElement("span");
+  av.className = "toast-avatar water";
+  av.textContent = "💧";
+
+  const body = document.createElement("span");
+  body.className = "toast-body";
+  const head = document.createElement("span");
+  head.className = "toast-head";
+  head.textContent = `Nhắc uống nước · ${String(hour).padStart(2, "0")}:00`;
+  const text = document.createElement("span");
+  text.className = "toast-text";
+  text.textContent = "Đến giờ uống nước rồi — tranh thủ một ly nhé!";
+  body.append(head, text);
+
+  item.append(av, body);
+  el.toastStack.append(item);
+  while (el.toastStack.children.length > TOAST_MAX) el.toastStack.firstElementChild?.remove();
+
+  let timer = setTimeout(remove, WATER_TOAST_LIFE_MS);
+  function remove() {
+    clearTimeout(timer);
+    item.classList.add("out");
+    setTimeout(() => item.remove(), 180);
+  }
+  item.addEventListener("mouseenter", () => clearTimeout(timer));
+  item.addEventListener("mouseleave", () => {
+    timer = setTimeout(remove, 3000);
+  });
+  item.addEventListener("click", remove);
+}
+
+function notifyWater(hour) {
+  if (!notifEnabled()) return;
+  try {
+    const n = new Notification("💧 Nhắc uống nước", {
+      body: `Đã ${hour}:00 — uống một ly nước nhé!`,
+      tag: `water-${todayISO()}-${hour}`,
+      icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💧</text></svg>",
+      silent: false,
+    });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
+  } catch {
+    /* bỏ qua */
+  }
+}
+
+/** Mỗi giờ trong khung 9:00–18:00 (bỏ nghỉ trưa 11:00–13:00) nhắc đúng 1 lần. */
+function maybeWaterReminder() {
+  const now = new Date();
+  const key = waterKeyFor(now);
+  if (!key) return;
+  if (readLastWater() === key) return;
+  saveLastWater(key);
+  if (document.hidden && notifEnabled()) notifyWater(now.getHours());
+  else showWaterToast(now.getHours());
 }
 
 /* ---------------- Ordering (1 món / người / ngày) ---------------- */
@@ -2343,6 +2461,10 @@ async function init() {
   if (state.remindTimer) clearInterval(state.remindTimer);
   state.remindTimer = setInterval(maybeShowReminder, 60000);
   setTimeout(maybeShowReminder, 800);
+
+  if (state.waterTimer) clearInterval(state.waterTimer);
+  state.waterTimer = setInterval(maybeWaterReminder, 60000);
+  setTimeout(maybeWaterReminder, 500);
 }
 
 function bootSafely() {

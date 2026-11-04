@@ -23,5 +23,12 @@ export const CUTOFF_WEEKDAYS = [1, 2, 3, 4, 5];
 export const REMINDER_START_MINUTES = 16 * 60 + 30;
 export const REMINDER_SNOOZE_MIN = 15;
 
+// Nhắc uống nước: mỗi giờ từ 9:00 → 18:00, bỏ qua giờ nghỉ trưa 11:00–13:00
+// (không nhắc lúc 11h, 12h; tiếp tục từ 13h).
+export const WATER_START_HOUR = 9;
+export const WATER_END_HOUR = 18;
+export const WATER_LUNCH_START_HOUR = 11;
+export const WATER_LUNCH_END_HOUR = 13;
+
 export const isConfigured = () =>
   SUPABASE_URL.trim().startsWith("http") && SUPABASE_ANON_KEY.trim().length > 20;

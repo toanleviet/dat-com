@@ -22,6 +22,8 @@ Cơm sườn_(Hải Nam) - An
 - **Chat nội bộ** — một phòng chat chung cho cả công ty, có toast thông báo kiểu Teams.
 - **Chốt đơn 18:00** — T2–T6 khoá đặt/đổi/xoá đơn sau giờ chốt; trang **Lịch sử đơn** xem lại
   theo tháng; popup nhắc "Đặt cơm ae ơi!!!" lúc 16:30.
+- **Nhắc uống nước** — mặc định mỗi tiếng từ **9:00 → 18:00** (bỏ qua giờ nghỉ trưa 11:00–13:00):
+  toast 💧 trong trang, kèm thông báo hệ điều hành khi tab bị thu nhỏ (nếu đã bật 🔔).
 - **Import CSV** — thêm hàng loạt món, có xem trước và bỏ qua món trùng.
 - **Copy danh sách** — xuất text đúng cú pháp để dán vào Word/Slack.
 

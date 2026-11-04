@@ -1,4 +1,12 @@
-import { CUTOFF_HOUR, CUTOFF_WEEKDAYS, REMINDER_START_MINUTES } from "./config.js";
+import {
+  CUTOFF_HOUR,
+  CUTOFF_WEEKDAYS,
+  REMINDER_START_MINUTES,
+  WATER_START_HOUR,
+  WATER_END_HOUR,
+  WATER_LUNCH_START_HOUR,
+  WATER_LUNCH_END_HOUR,
+} from "./config.js";
 
 /** "YYYY-MM-DD" theo giờ máy. */
 export function isoDate(date = new Date()) {
@@ -60,6 +68,14 @@ export function minutesToCutoff(now = new Date(), cutoffHour = CUTOFF_HOUR) {
 /** "2026-11" từ Date. */
 export function monthKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Giờ nhắc uống nước cho `date`; null nếu ngoài 9:00–18:00 hoặc đang nghỉ trưa 11:00–13:00. */
+export function waterReminderHour(date = new Date()) {
+  const hour = date.getHours();
+  if (hour < WATER_START_HOUR || hour > WATER_END_HOUR) return null;
+  if (hour >= WATER_LUNCH_START_HOUR && hour < WATER_LUNCH_END_HOUR) return null;
+  return hour;
 }
 
 /** Ngày cuối cùng của tháng "YYYY-MM" → "YYYY-MM-DD". */
