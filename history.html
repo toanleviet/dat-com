@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lịch sử đơn — Đặt cơm công ty</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍚</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📜</span>
+      <span class="text">Lịch sử đơn</span>
+    </div>
+    <div class="spacer"></div>
+    <a class="btn btn-ghost btn-sm" href="index.html">← Về đặt cơm</a>
+    <a class="btn btn-ghost btn-sm" href="setup.html">Quản lý món</a>
+  </header>
+
+  <main class="page history-page">
+    <div id="configBanner" class="banner banner-warn hidden">
+      <div>
+        <strong>Chưa cấu hình Supabase.</strong>
+        Điền <code>SUPABASE_URL</code> + <code>SUPABASE_ANON_KEY</code> trong <code>js/config.js</code>.
+      </div>
+    </div>
+
+    <div class="card history-toolbar">
+      <label for="historyMonth" class="small muted">Tháng</label>
+      <input type="month" id="historyMonth" class="input" />
+      <button type="button" class="btn btn-ghost btn-sm" id="historyReload">Tải lại</button>
+      <span class="small muted history-summary" id="historySummary"></span>
+    </div>
+
+    <div id="historyList" class="history-list"></div>
+    <div class="empty-state hidden" id="historyEmpty">Không có đơn nào trong tháng này.</div>
+  </main>
+
+  <script type="module" src="js/history.js"></script>
+</body>
+</html>

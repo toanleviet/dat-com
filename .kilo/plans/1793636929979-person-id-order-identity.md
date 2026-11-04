@@ -1,162 +1,137 @@
-# Plan: Bỏ AI, gợi ý món thuần theo rule thời tiết
+# Plan: Đổi rule mưa sang lượng mưa (mm) — hai ngưỡng 25 / 10 mm
 
-## Mục tiêu
+## Vấn đề
 
-1. **Xoá toàn bộ AI**: khung Hỏi AI, Edge Function, module `ai-suggest.js`, secrets, docs AI.
-2. **Giữ và làm rõ gợi ý theo rule**: dựa vào thời tiết TP.HCM, chọn món khớp từ khoá từ **cả 2 menu** → hiện **tối đa 10 chip**, **không lấp thêm** nếu không đủ.
-3. Giữ câu mô tả mẫu theo loại thời tiết (không còn AI viết câu).
+App đang dùng `precipitation_probability` (%) với ngưỡng `RAIN_PCT = 60`. Vì % là xác suất **có mưa ở đâu đó trong ô lưới ~11 km** trong giờ đó, TP.HCM mùa mưa gần như **ngày nào cũng ≥ 60%** → ngày nào cũng xếp "mưa" và gợi ý món nước, dù thực tế chỉ mưa nhẹ vài phút.
+
+Đo thực tế 60 ngày qua tại Quận 4 (`10.7575, 106.7053`, Open-Meteo): ngày lớn nhất **41.6 mm**, và tỉ lệ ngày vượt từng ngưỡng là ≥2 mm: 92%, ≥10 mm: 68%, ≥25 mm: 22%, **≥50 mm: 0%**.
 
 ## Quyết định (user đã chốt)
 
-| Chủ đề | Quyết định |
-| --- | --- |
-| Nguồn món | Cả **Hải Nam + Dejavu**; chip món quán khác ghi kèm tên quán |
-| Số món | Tối đa **10**; **không bổ sung** món ngoài từ khoá khi thiếu (hiện ít hơn) |
-| Câu mô tả | Giữ `adviceTemplate()` theo loại thời tiết |
-| Code AI | **Xoá hết** (file, function, UI, CSS, state, docs) |
+Dùng **lượng mưa (mm)** thay cho %, với **hai ngưỡng**:
 
-## Hiện trạng liên quan
+| Ngưỡng (17–20h) | Phân loại | Ảnh hưởng |
+| --- | --- | --- |
+| **≥ 25 mm** | `rainy` (mưa to) | Đổi nhóm gợi ý sang món nước |
+| **10 – < 25 mm** | mưa nhẹ/trung bình | **Không** đổi nhóm món; chỉ ghi chú "mưa nhẹ ~X mm" trong panel |
+| < 10 mm | không mưa | Như bình thường (nóng / nóng ẩm / dịu / mát) |
 
-- `js/weather.js:272` `pickWeatherDishes(dishes, weather, stats, limit = 10)` — đã có luật + từ khoá;
-  hiện có nhánh **`relaxed`** trả món bất kỳ khi không khớp → **phải bỏ** (trái quyết định "không lấp").
-- `js/app.js`:
-  - `renderWeatherPicks()` (~:680-743) ghép picks AI + luật → bỏ nhánh AI.
-  - `computeWeatherPicks()`, `matchDishByName()`, `normalizeDishKey()` — chỉ dùng cho AI → xoá.
-  - Khối `/* Chat AI */` (~:795-940): `readAiChat/saveAiChat/renderAiChat/setAiChatBusy/pushAiChat/buildAiChatSummary/sendAiChat` + binding form/clear → xoá.
-  - `dishPoolForAi()`, `aiShouldRetry()`, `activeRestaurantName()` (chỉ dùng cho AI) → xoá.
-  - `loadWeather()` có `getAiSuggestion` → bỏ; chỉ `fetchWeather` + `renderWeatherPanel` + `renderWeatherPicks`.
-  - State: `aiSuggestion`, `aiError`, `aiLastTriedAt`, `aiChat`, `aiChatBusy` → xoá; hằng `AI_*`, `KEY_AI_CHAT`, `PICKS_TOTAL`, `AI_PICK_LIMIT` → xoá/giữ theo mục 3.
-  - `init()`: `state.aiChat = readAiChat(); renderAiChat()` → xoá.
-  - `el`: `aiChat*` → xoá.
-- `index.html`: card `🤖 Hỏi AI` (~:70-86) → xoá.
-- `css/style.css`: khối `/* Chat AI (dưới card thời tiết) */` (`.ai-chat-*`) → xoá; `.weather-picks-list` `max-height` giữ.
-- `js/ai-suggest.js` (254 dòng) + `supabase/functions/weather-suggest/` (index.ts + README) → xoá.
-- `supabase/config.toml`: `[functions.weather-suggest]` → xoá mục hàm, giữ `project_id`.
-- Docs: `cai-dat.md` mục 5, `xu-ly-su-co.md` các dòng AI, `su-dung.md` mục Hỏi AI, `trien-khai.md` cây file.
+(Xấp xỉ theo ngày: 25 mm/24h ≈ 5 mm/3h, 10 mm/24h ≈ 2 mm/3h.)
 
-## Task
+## Đổi gì
 
-### 1. Rule gợi ý — `js/weather.js`
+### 1. `js/weather.js`
 
-a) `pickWeatherDishes()`: bỏ `relaxed`:
+a) Hằng số (thay `RAIN_PCT = 60`):
 
 ```js
-const matched = scored.filter((s) => s.hits.length);
-matched.sort((a, b) => b.score - a.score || ratingOf(stats, a.dish.id) - ratingOf(stats, b.dish.id));
-return { items: matched.slice(0, limit).map(...), cls };
+// Lượng mưa trong khung 17–20h (mm)
+const RAIN_HEAVY_MM = 5;    // ≙ ~25 mm/ngày → coi là mưa thật
+const RAIN_LIGHT_MM = 2;    // ≙ ~10 mm/ngày → chỉ ghi chú "mưa nhẹ"
 ```
 
-(Bỏ `relaxed` khỏi return type; cập nhật chỗ dùng.)
+b) `fetchWeather()` — thêm biến `hourly`:
 
-b) Bảng từ khoá — mở rộng theo kiểu món Việt, vẫn accent-free (`normalize`):
+```
+hourly=temperature_2m,relative_humidity_2m,precipitation,precipitation_probability,weather_code
+```
 
-| Nhóm | Từ khoá |
-| --- | --- |
-| Mưa / mát (`COOL`) | canh, sup, lau, kho, nuong, hap, nong, ca ri, mi, bun, pho, hu tieu, mien, chao, banh canh, ramen, udon, xao, rim, tiem |
-| Nóng / nóng ẩm (`HOT`) | tron, goi, nom, salad, lanh, da, cuon, che, sinh to, do chua, sua chua |
+(giữ `precipitation_probability` để hiển thị phụ, không dùng để phân loại nữa)
 
-Chỉ thêm từ khoá **chắc chắn là tên món** (kiểm tra không khớp "cơm" — xem `matchesKeyword` với từ ≤3 ký tự).
+c) `buildWeather()`:
 
-c) `classifyWeather()` giữ nguyên (rainy → hot → cool → humid → mild).
-
-d) `adviceTemplate()`: bỏ nhắc "AI", giữ nội dung; thêm trường hợp `humid` khi có mưa nhẹ
-(`maxRain 40–59`) → "Nóng ẩm, có thể mưa chiều — chọn món vừa mát vừa ấm bụng." (tuỳ chọn, 2 dòng).
-
-### 2. `js/app.js` — render thuần rule
-
-`renderWeatherPicks()` rút gọn:
+- `nextHours[]` thêm `mm: Math.round((hourly.precipitation?.[i] ?? 0) * 10) / 10`.
+- `evening` thêm:
 
 ```js
-function renderWeatherPicks() {
-  if (!el.weatherPicks) return;
-  if (!state.weather) { el.weatherPicks.classList.add("hidden"); return; }
+rainMm: idx.length ? round1(sum(hourly.precipitation[i] for i of idx)) : null,
+```
 
-  const res = computeWeatherPicks();          // luật trên pool 2 quán
-  if (!res.items.length) { el.weatherPicks.classList.add("hidden"); return; }
+- `current.raining` đổi thành: `(cur.precipitation ?? 0) >= 0.5 && code >= 51` — tránh báo "đang mưa" khi chỉ 0.0–0.4 mm.
 
-  el.weatherPicks.classList.remove("hidden");
-  el.weatherAdvice.textContent = adviceTemplate(res.cls, state.weather);
-  /* render chip + nút + như hiện tại */
+d) `classifyWeather()`:
+
+```js
+const mm = e.rainMm;
+if (mm != null && mm >= RAIN_HEAVY_MM) return "rainy";
+// KHÔNG còn dùng % và KHÔNG còn coi current.raining là rainy
+if (temp != null && temp >= HOT_TEMP) return "hot";
+...
+```
+
+e) Thêm helper xuất ra ngoài để UI dùng lại:
+
+```js
+export function rainLevel(mm) {
+  if (mm == null) return "none";
+  if (mm >= RAIN_HEAVY_MM) return "heavy";
+  if (mm >= RAIN_LIGHT_MM) return "light";
+  return "none";
 }
 ```
 
-`computeWeatherPicks()`: `pickWeatherDishes(pool, state.weather, state.reviewStats, 10)`, pool = `state.allDishes || state.dishes`.
+f) `adviceTemplate()`:
 
-`loadWeather()`: bỏ hoàn toàn nhánh `getAiSuggestion`/`aiShouldRetry`; giữ `ensureSpinPool()`, `renderWeatherPanel()`, `renderWeatherPicks()`.
+- `rainy`: dùng `evening.rainMm` thay `maxRain`
+  → "Chiều nay mưa ~7 mm (khoảng 30 mm/ngày) — món nước như mì, bún, phở cho ấm bụng."
+- `humid`: đổi điều kiện `maxRain >= 40` → `rainLevel(rainMm) === "light"`.
+- Trường hợp `light` và lớp khác (hot/cool): thêm câu nhắc ngắn khi hiển thị — xem mục 2.
 
-### 3. Xoá code AI
+g) `pickWeatherDishes()`: `rainyEvening` đổi sang `rainLevel(weather?.evening?.rainMm) !== "none"` (nóng + có mưa nhẹ → vẫn ưu tiên union món mát + món nước).
 
-Xoá theo danh sách "Hiện trạng liên quan" ở trên. Cụ thể:
+### 2. Panel thời tiết — `js/app.js` `renderWeatherPanel()`
 
-1. Xoá file `js/ai-suggest.js`; xoá thư mục `supabase/functions/weather-suggest/`.
-2. `js/app.js`: import `getAiSuggestion, askAiChat`; state `ai*`; el `aiChat*`; hằng
-   `AI_RETRY_COOLDOWN_MS`, `AI_RETRY_AFTER_ERROR_MS`, `AI_CHAT_MAX`, `AI_CHAT_KEEP`,
-   `AI_HISTORY_SEND`, `AI_CHAT_TTL_MS`, `AI_PICK_LIMIT`, `KEY_AI_CHAT`; hàm
-   `dishPoolForAi`, `aiShouldRetry`, `activeRestaurantName`, `matchDishByName`,
-   `normalizeDishKey`, toàn bộ khối Chat AI; gọi trong `init()`/`loadWeather()`/`renderWeatherPicks()`.
-   Giữ `PICKS_TOTAL = 10`.
-3. `index.html`: xoá `<div class="card ai-chat-card">…</div>`.
-4. `css/style.css`: xoá khối `.ai-chat-*` + `.ai-chat-list .chat-*` overrides; giữ `.weather-picks*`.
-5. `supabase/config.toml`: xoá `[functions.weather-suggest]` (giữ `project_id`).
+- `#weatherMeta`: thay `🌧️ Mưa 17–20h ${maxRain}%`
+  → `🌧️ Mưa 17–20h ~${rainMm} mm` (giữ % làm tooltip: `title="${maxRain}% khả năng có mưa trong khu vực"`).
+- `#weatherHours` mỗi chip: thêm `· ${mm}mm` (rỗng nếu 0).
+- `#weatherEvening`: dòng tóm tắt thay `mưa X%` bằng `mưa ~X mm` + nhãn cấp:
 
-### 4. Dọn localStorage cũ (một lần, trong `init()`)
+| `rainLevel` | Nhãn | Màu |
+| --- | --- | --- |
+| `heavy` | 🔴 mưa to | `--danger` |
+| `light` | 🟡 mưa nhẹ | `#b45309` |
+| `none` | (không hiện) | — |
 
-```js
-try {
-  localStorage.removeItem("dedatcom_ai_suggest_v1");
-  localStorage.removeItem("dedatcom_ai_chat");
-} catch { /* bỏ qua */ }
-```
+- Thêm dòng ghi chú nhỏ dưới panel: *"% chỉ là khả năng có mưa đâu đó trong khu vực TP.HCM — app dùng lượng mưa (mm) để gợi ý món."*
 
-(không bắt buộc nhưng tránh dữ liệu rác)
+### 3. Docs
 
-### 5. Docs
-
-| File | Việc |
-| --- | --- |
-| `docs/su-dung.md` | Xoá mục "Hỏi AI"; sửa mục thời tiết: "gợi ý theo luật, tối đa 10 món khớp từ khoá, không bổ sung món ngoài" |
-| `docs/cai-dat.md` | Xoá mục 5 "Gợi ý món bằng AI"; ghi chú ngắn: chỉ cần Open-Meteo (miễn phí, không key) |
-| `docs/xu-ly-su-co.md` | Xoá 7 dòng về AI/function; giữ dòng "Panel thời tiết trống" |
-| `docs/trien-khai.md` | Xoá 2 dòng `js/ai-suggest.js`, `supabase/functions/weather-suggest/` khỏi cây file |
-| `README.md` | Sửa bullet tính năng: bỏ "lời khuyên AI", còn "gợi ý món theo thời tiết (luật)" |
-
-### 6. Hạ tầng (user chạy, ngoài repo)
-
-```powershell
-supabase functions delete weather-suggest --remote wqnhforhekyyyfgbbfsd
-supabase secrets unset GEMINI_API_KEY OPENROUTER_API_KEY OPENAI_API_KEY LLM_API_KEY GEMINI_MODELS OPENROUTER_MODELS --remote wqnhforhekyyyfgbbfsd
-```
-
-(`secrets unset` có thể cần mỗi lần 1 tên tuỳ phiên bản CLI.)
+- `docs/su-dung.md` mục "Thời tiết & món gợi ý": ghi ngưỡng 25 mm (17–20h ≈ 5 mm) và 10 mm; giải thích vì sao không dùng %.
+- `docs/xu-ly-su-co.md`: dòng "Ngày nào cũng gợi ý món nước" → đã sửa: nay dựa trên mm; nếu vẫn lệch, kiểm tra `rainMm` trong payload (`hourly.precipitation`); "Dự báo mưa nhưng không mưa" → % là xác suất theo vùng, không phải điểm.
 
 ## Rủi ro & lưu ý
 
 | Rủi ro | Xử lý |
 | --- | --- |
-| Menu có ít món khớp → hiện 2–3 chip | Đúng quyết định của user; câu advice vẫn giải thích lý do |
-| `relaxed` bỏ đi → có hôm block ẩn (không món nào khớp) | Ẩn block trong trường hợp đó; danh sách món bên dưới vẫn đủ |
-| Xoá nhầm code dùng chung (`weatherClassLabel`, `adviceTemplate`) | Kiểm tra `grep` trước khi xoá; 2 hàm này **giữ** |
-| `state.allDishes` cần cho pool 2 quán | Giữ `ensureSpinPool()` trong `loadWeather` |
-| Từ khoá mới khớp nhầm | Test với tên món thật trong menu; từ ≤3 ký tự đi qua `matchesKeyword()` |
-| Function đã xoá nhưng client cũ còn cache | Không sao — không còn ai gọi; xoá localStorage ở mục 4 |
-| `config.toml` chỉ còn `project_id` | Hợp lệ cho CLI; không deploy function nữa |
+| Open-Meteo không trả `hourly.precipitation` (đổi API) | `rainMm` = `null` → không bao giờ `rainy`; app vẫn chạy, chỉ mất nhóm mưa |
+| Ngưỡng 5 mm/3h vẫn gợi ý món nước ~22% ngày | Đúng lựa chọn; nếu thấy nhiều, nâng `RAIN_HEAVY_MM` (một hằng số) |
+| Mưa rào cục bộ nặng hơn mô hình (ô 11 km làm mượt) | Nêu trong docs; không giải quyết được ở client |
+| `evening` là ngày mai sau 20h | Như hiện tại, dùng đúng khung giờ |
+| Cache `dedatcom_weather_v1` còn dữ liệu cũ (không có `rainMm`) | `buildWeather` tính lại từ payload mỗi lần fetch; cache cũ hết hạn sau 10 phút. Không cần migration |
+
+## Thứ tự thực hiện
+
+1. `js/weather.js`: hằng số, `fetchWeather` params, `buildWeather` (`mm`, `rainMm`), `classifyWeather`, `rainLevel`, `adviceTemplate`, `pickWeatherDishes`.
+2. `js/app.js`: `renderWeatherPanel()` hiển thị mm + nhãn cấp + tooltip %.
+3. Docs.
+4. Chạy test.
 
 ## Validation
 
-- [ ] `grep -r "ai-suggest\|aiChat\|aiSuggestion\|weather-suggest" js/ index.html css/` → **rỗng**.
-- [ ] `node --check js/app.js js/weather.js js/setup.js` pass; `smoke2.mjs` import app.js không crash.
-- [ ] `weather-test.mjs` cập nhật: bỏ kỳ vọng `relaxed`; thêm test "không món nào khớp → `items.length === 0`".
-- [ ] `keyword-test.mjs` pass; thêm test từ khoá mới (`Bún bò Huế` khớp `bun`, `Cơm sườn` không khớp `mi`, `Gỏi cuốn` khớp `goi`).
-- [ ] Test render: pool 2 quán, trời mưa, 6 món khớp → 6 chip (không lấp 10); cue advice từ `adviceTemplate`.
-- [ ] `html-check.mjs`: không ID trùng, `<div>` cân, CSS ngoặc cân; `check-refs.mjs` không báo ID thiếu mới.
-- [ ] Thủ công desktop: panel thời tiết cột trái **không còn** card Hỏi AI; block gợi ý có câu + chip, bấm `+` đặt được.
-- [ ] Thủ công mobile ≤1200px: cột trái chỉ còn card Thời tiết, không khoảng trống bất thường.
-- [ ] Encoding UTF-8 sạch sau khi sửa (không dùng `Get-Content -Raw`/`Set-Content` PowerShell 5.1).
-- [ ] `supabase functions list` sau khi delete: không còn `weather-suggest`.
+- [ ] `node --check js/weather.js js/app.js`.
+- [ ] Test thuần (`weather-test.mjs` / `tz-test.mjs` cập nhật payload có `precipitation`):
+  - 17–20h tổng 0.4 mm → `classify = hot|humid`, **không** `rainy`.
+  - tổng 6 mm → `rainy`.
+  - `rainLevel(0)`/`(1.5)`/`(6)` → `none`/`light`/`heavy`.
+  - Không có `hourly.precipitation` → `rainMm = null`, không crash, không `rainy`.
+- [ ] Thủ công: ngày mưa nhẹ (như 28/10: 0.4 mm) → panel hiện "mưa 17–20h ~0.4 mm", block gợi ý vẫn theo nóng/nóng ẩm.
+- [ ] Thủ công: ngày mưa 41.6 mm → `rainy`, gợi ý món nước, nhãn 🔴 mưa to.
+- [ ] Smoke + `html-check` (không ID trùng, div/CSS cân bằng).
+- [ ] Encoding UTF-8 sạch.
 
 ## Ngoài phạm vi
 
-- Admin chỉnh bảng từ khoá trên web (giữ trong code `weather.js`).
-- Tag thời tiết trong DB cho từng món.
-- Gợi ý theo sở thích cá nhân (lịch sử đặt của user).
-- Đổi nguồn thời tiết / nhiều thành phố.
+- Dùng nguồn NCHMF (không có API, chỉ văn bản cấp thành phố).
+- Dự báo theo quận (mô hình lưới ~11 km, không đủ phân giải).
+- Cảnh báo ngập/thiên tai.
+- Lưu lịch sử dự báo để đánh giá độ chính xác.

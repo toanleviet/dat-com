@@ -1,4 +1,4 @@
-import { isConfigured, WEATHER_CITY } from "./config.js";
+import { isConfigured, WEATHER_CITY, CUTOFF_HOUR, REMINDER_SNOOZE_MIN } from "./config.js";
 import { getSupabase } from "./supabase-client.js";
 import { attachDishImage } from "./placeholder.js";
 import {
@@ -6,13 +6,17 @@ import {
   classifyWeather,
   pickWeatherDishes,
   adviceTemplate,
+  rainLevel,
 } from "./weather.js";
+import { isDateLocked, isPastCutoff, isReminderWindow, minutesToCutoff } from "./schedule.js";
 
 const KEY_PERSON = "dedatcom_person";
 const KEY_PERSON_ID = "dedatcom_person_id";
 const KEY_ORDERS = "dedatcom_orders";
-const MAX_NAME_LEN = 40;
+const MAX_NAME_LEN = 16;
 const PICKS_TOTAL = 10;
+const TOP_DISHES = 10;
+const TOP_DAYS = 30;
 
 const state = {
   person: "",
@@ -36,6 +40,11 @@ const state = {
   weatherPicks: [],
   weatherClass: "mild",
   weatherBusy: false,
+  topDishes: [],
+  topDishesTimer: null,
+  locked: null,
+  lockTimer: null,
+  remindTimer: null,
   chat: [],
   chatBusy: false,
   chatOpen: true,
@@ -112,14 +121,34 @@ const el = {
   weatherEvening: $("weatherEvening"),
   weatherUpdated: $("weatherUpdated"),
   weatherPicks: $("weatherPicks"),
+  weatherPicksWhen: $("weatherPicksWhen"),
   weatherAdvice: $("weatherAdvice"),
   weatherPicksList: $("weatherPicksList"),
+  topDishesCard: $("topDishesCard"),
+  topDishesList: $("topDishesList"),
+  lockBanner: $("lockBanner"),
+  lockBannerText: $("lockBannerText"),
+  remindOverlay: $("remindOverlay"),
+  remindLeft: $("remindLeft"),
+  remindGo: $("remindGo"),
+  remindLater: $("remindLater"),
+  toastStack: $("toastStack"),
+  notifBtn: $("notifBtn"),
 };
 
 /* ---------------- Helpers ---------------- */
 
 function todayISO() {
   const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** Ngày "YYYY-MM-DD" cách hôm nay `n` ngày về trước (n = 0 là hôm nay). */
+function isoDaysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${m}-${day}`;
@@ -252,12 +281,25 @@ function openNameModal() {
   setTimeout(() => el.nameInput.focus(), 50);
 }
 
+// Chip gợi ý thời tiết + dòng "Món đặt nhiều": nhấp cả thẻ để đặt món.
+[el.weatherPicksList, el.topDishesList].forEach((container) => {
+  if (!container) return;
+  container.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-add]");
+    if (!btn || btn.disabled) return;
+    addOrder(btn.dataset.add);
+  });
+});
+
 el.nameForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = el.nameInput.value.trim().replace(/\s+/g, " ").slice(0, MAX_NAME_LEN);
   if (!name) {
     el.nameInput.focus();
     return;
+  }
+  if (el.nameInput.value.trim().replace(/\s+/g, " ").length > MAX_NAME_LEN) {
+    toast(`Tên người đặt tối đa ${MAX_NAME_LEN} ký tự.`, "error");
   }
   const prevName = state.person;
   const isNew = name !== prevName;
@@ -571,10 +613,11 @@ function renderDishes() {
 
 /* ---------------- Thời tiết & gợi ý món ---------------- */
 
-/** Mọi nút "+" (trong lưới món và trong block gợi ý theo thời tiết). */
+/** Mọi nút đặt món (lưới món, block gợi ý thời tiết, card món đặt nhiều). */
 function allAddButtons() {
   const nodes = [];
   if (el.weatherPicks) nodes.push(...el.weatherPicks.querySelectorAll("[data-add]"));
+  if (el.topDishesList) nodes.push(...el.topDishesList.querySelectorAll("[data-add]"));
   if (el.dishArea) nodes.push(...el.dishArea.querySelectorAll("[data-add]"));
   return nodes;
 }
@@ -596,12 +639,16 @@ function renderWeatherPanel() {
   el.weatherTemp.textContent = `${w.current.temp}°`;
   el.weatherLabel.textContent = w.current.label;
   if (el.weatherMeta) {
+    const e = w.evening;
+    const pctTitle =
+      e.maxRain != null ? `khả năng có mưa trong khu vực: ${e.maxRain}%` : "";
     el.weatherMeta.innerHTML = [
-      `💧 Độ ẩm ${w.current.humidity}%`,
-      w.evening.maxRain != null ? `🌧️ Mưa 17–20h ${w.evening.maxRain}%` : "",
+      `<span>💧 Độ ẩm ${w.current.humidity}%</span>`,
+      e.rainMm != null
+        ? `<span title="${escapeHtml(pctTitle)}">🌧️ Mưa 17–20h ~${e.rainMm} mm</span>`
+        : "",
     ]
       .filter(Boolean)
-      .map((t) => `<span>${escapeHtml(t)}</span>`)
       .join("");
   }
 
@@ -613,7 +660,7 @@ function renderWeatherPanel() {
         <div class="weather-hour">
           <b>${escapeHtml(h.time)}</b>
           <span>${h.temp}°C</span>
-          <span class="wh-meta">💧${h.humidity}% · 🌧️${h.rain}%</span>
+          <span class="wh-meta">💧${h.humidity}%${h.mm ? ` · 🌧️${h.mm}mm` : ""}</span>
         </div>`
           )
           .join("")
@@ -626,17 +673,26 @@ function renderWeatherPanel() {
       el.weatherEvening.innerHTML = "";
     } else {
       const when = e.tomorrow ? "Chiều mai" : "Chiều tối";
+      const level = rainLevel(e.rainMm);
+      const badge =
+        level === "heavy"
+          ? ' · <span class="rain-level heavy">🔴 mưa to</span>'
+          : level === "light"
+          ? ' · <span class="rain-level light">🟡 mưa nhẹ</span>'
+          : "";
       el.weatherEvening.innerHTML = `<strong>${escapeHtml(when)} ${e.fromHour}–${e.toHour}h · ${escapeHtml(
         e.icon
-      )} ${escapeHtml(e.label)}</strong>~${e.avgTemp}°C · ẩm ${e.avgHumidity ?? "?"}% · mưa ${
-        e.maxRain ?? "?"
-      }%`;
+      )} ${escapeHtml(e.label)}</strong>~${e.avgTemp}°C · ẩm ${e.avgHumidity ?? "?"}% · mưa ~${
+        e.rainMm ?? "?"
+      } mm${badge}`;
     }
   }
 
   if (el.weatherUpdated) {
     const t = new Date(w.fetchedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-    el.weatherUpdated.textContent = w.stale ? `Dữ liệu cũ (${t}) — không cập nhật được.` : `Cập nhật ${t}`;
+    el.weatherUpdated.textContent = w.stale
+      ? `Dữ liệu cũ (${t}) — không cập nhật được.`
+      : `Cập nhật ${t} · % chỉ là khả năng mưa trong vùng, gợi ý dùng lượng mưa (mm)`;
   }
 }
 
@@ -656,6 +712,12 @@ function renderWeatherPicks() {
   }
 
   el.weatherPicks.classList.remove("hidden");
+  if (el.weatherPicksWhen) {
+    const e = state.weather.evening || {};
+    el.weatherPicksWhen.textContent = e.tomorrow
+      ? `bữa ${e.fromHour}–${e.toHour}h mai`
+      : `bữa ${e.fromHour}–${e.toHour}h hôm nay`;
+  }
   if (el.weatherAdvice) {
     el.weatherAdvice.textContent = adviceTemplate(res.cls, state.weather);
   }
@@ -666,19 +728,88 @@ function renderWeatherPicks() {
       const r = dish.restaurant_id ? restaurantsById.get(dish.restaurant_id) : null;
       const sub = r && !state.dishes.some((d) => d.id === dish.id) ? r.name : "";
       return `
-        <span class="pick-chip">
+        <button type="button" class="pick-chip" data-add="${escapeHtml(dish.id)}"
+                data-name="${escapeHtml(dish.name)}"
+                title="Thêm ${escapeHtml(dish.name)}" aria-label="Thêm ${escapeHtml(dish.name)}">
           <span class="pick-name">${escapeHtml(dish.name)}</span>
           ${sub ? `<span class="pick-sub">${escapeHtml(sub)}</span>` : ""}
-          <button type="button" class="add-btn" data-add="${escapeHtml(dish.id)}"
-                  data-name="${escapeHtml(dish.name)}"
-                  title="Thêm ${escapeHtml(dish.name)}" aria-label="Thêm ${escapeHtml(dish.name)}">+</button>
-        </span>`;
+        </button>`;
     })
     .join("");
 
-  el.weatherPicksList.querySelectorAll("[data-add]").forEach((btn) => {
-    btn.addEventListener("click", () => addOrder(btn.dataset.add));
-  });
+  refreshMineUI();
+}
+
+/* ---------------- Món đặt nhiều ---------------- */
+
+async function loadTopDishes() {
+  const { data, error } = await state.supabase
+    .from("orders")
+    .select("dish_id, dish_name, restaurant_name")
+    .gte("order_date", isoDaysAgo(TOP_DAYS - 1))
+    .limit(2000);
+  if (error) throw error;
+
+  const counts = new Map();
+  for (const o of data || []) {
+    const key = o.dish_id || `name:${o.dish_name}`;
+    const cur = counts.get(key) || {
+      key,
+      dishId: o.dish_id || null,
+      name: o.dish_name || "",
+      restaurant: o.restaurant_name || "",
+      count: 0,
+    };
+    cur.count++;
+    cur.name = o.dish_name || cur.name;
+    cur.restaurant = o.restaurant_name || cur.restaurant;
+    counts.set(key, cur);
+  }
+
+  state.topDishes = [...counts.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, TOP_DISHES);
+  renderTopDishes();
+}
+
+function renderTopDishes() {
+  if (!el.topDishesCard || !el.topDishesList) return;
+  const rows = state.topDishes || [];
+  if (!rows.length) {
+    el.topDishesCard.classList.add("hidden");
+    return;
+  }
+
+  el.topDishesCard.classList.remove("hidden");
+  const max = rows[0].count || 1;
+  const knownIds = new Set(
+    [...(state.allDishes || []), ...(state.dishes || [])].map((d) => d.id)
+  );
+  const medals = ["🥇", "🥈", "🥉"];
+
+  el.topDishesList.innerHTML = rows
+    .map((row, idx) => {
+      const clickable = row.dishId && knownIds.has(row.dishId);
+      const sub = row.restaurant ? `<span class="pick-sub">${escapeHtml(row.restaurant)}</span>` : "";
+      const inner = `
+        <span class="top-dish-rank">${medals[idx] || idx + 1}</span>
+        <span class="top-dish-body">
+          <span class="top-dish-line">
+            <span class="top-dish-name">${escapeHtml(row.name)}</span>
+            ${sub}
+          </span>
+          <span class="top-dish-bar" style="width:${Math.max(6, Math.round((row.count / max) * 100))}%"></span>
+        </span>
+        <span class="top-dish-count">×${row.count}</span>`;
+
+      return clickable
+        ? `<button type="button" class="top-dish clickable" data-add="${escapeHtml(row.dishId)}"
+                   data-name="${escapeHtml(row.name)}"
+                   title="Thêm ${escapeHtml(row.name)}" aria-label="Thêm ${escapeHtml(row.name)}">${inner}</button>`
+        : `<div class="top-dish">${inner}</div>`;
+    })
+    .join("");
+
   refreshMineUI();
 }
 
@@ -707,6 +838,304 @@ async function loadWeather() {
   } finally {
     state.weatherBusy = false;
   }
+}
+
+/* ---------------- Chốt đơn ---------------- */
+
+function renderLockBanner() {
+  if (!el.lockBanner) return;
+  const locked = state.locked === true;
+  el.lockBanner.classList.toggle("hidden", !locked);
+  if (locked && el.lockBannerText) {
+    el.lockBannerText.textContent = `Đã chốt đơn hôm nay lúc ${CUTOFF_HOUR}:00. Xem lịch sử để tra cứu.`;
+  }
+  // Khoá nút xoá đơn trong danh sách
+  el.orderList.classList.toggle("locked", locked);
+  [...el.orderList.querySelectorAll("[data-del]")].forEach((btn) => {
+    btn.disabled = locked;
+    btn.title = locked ? "Đã chốt đơn hôm nay" : "Xóa đơn này";
+  });
+}
+
+function applyLockState() {
+  const locked = isPastCutoff(new Date());
+  if (locked === state.locked) return;
+  state.locked = locked;
+  renderLockBanner();
+  renderDishes();
+  renderWeatherPicks();
+  renderTopDishes();
+  refreshMineUI();
+}
+
+/* ---------------- Nhắc đặt cơm 16:30 ---------------- */
+
+const KEY_REMIND = "dedatcom_remind";
+
+function readRemind() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(KEY_REMIND) || "null");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveRemind(rec) {
+  try {
+    localStorage.setItem(KEY_REMIND, JSON.stringify(rec));
+  } catch {
+    /* storage bị chặn */
+  }
+}
+
+function hideReminder() {
+  if (el.remindOverlay) el.remindOverlay.classList.add("hidden");
+}
+
+function showReminder() {
+  if (!el.remindOverlay) return;
+  if (el.remindLeft) el.remindLeft.textContent = String(minutesToCutoff(new Date()));
+  el.remindOverlay.classList.remove("hidden");
+  saveRemind({ ...readRemind(), date: todayISO(), shown: true });
+}
+
+function maybeShowReminder() {
+  if (!state.person || !state.loaded) return;
+  if (el.remindOverlay && !el.remindOverlay.classList.contains("hidden")) return;
+  if (!isReminderWindow(new Date())) return;
+  if (myTodayOrders().length) return;
+
+  const rec = readRemind();
+  const today = todayISO();
+  if (rec.date === today) {
+    if (rec.done) return;
+    if (rec.snoozeUntil && Date.now() < rec.snoozeUntil) return;
+  }
+  showReminder();
+}
+
+function bindReminder() {
+  if (!el.remindOverlay) return;
+  el.remindGo?.addEventListener("click", () => {
+    saveRemind({ date: todayISO(), done: true });
+    hideReminder();
+    const target = el.dishArea;
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      target.classList.add("flash");
+      setTimeout(() => target.classList.remove("flash"), 1200);
+    }
+  });
+  el.remindLater?.addEventListener("click", () => {
+    saveRemind({
+      date: todayISO(),
+      done: false,
+      snoozeUntil: Date.now() + REMINDER_SNOOZE_MIN * 60000,
+    });
+    hideReminder();
+  });
+  el.remindOverlay.addEventListener("click", (e) => {
+    if (e.target === el.remindOverlay) el.remindLater?.click();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !el.remindOverlay.classList.contains("hidden")) {
+      el.remindLater?.click();
+    }
+  });
+}
+
+/* ---------------- Toast chat ---------------- */
+
+const TOAST_MAX = 3;
+const TOAST_LIFE_MS = 6000;
+
+/* ---------------- Thông báo desktop ---------------- */
+
+const KEY_NOTIF = "dedatcom_notif"; // "on" | "off" | "" (chưa chọn)
+
+function notifSupported() {
+  return typeof window !== "undefined" && "Notification" in window;
+}
+
+/** Người dùng có bật thông báo desktop không (và trình duyệt đã cho phép). */
+function notifEnabled() {
+  if (!notifSupported()) return false;
+  if (Notification.permission !== "granted") return false;
+  try {
+    return localStorage.getItem(KEY_NOTIF) === "on";
+  } catch {
+    return false;
+  }
+}
+
+function renderNotifButton() {
+  if (!el.notifBtn) return;
+  const supported = notifSupported();
+  el.notifBtn.classList.toggle("hidden", !supported);
+  if (!supported) return;
+
+  const on = notifEnabled();
+  const denied = Notification.permission === "denied";
+  el.notifBtn.textContent = on ? "🔔" : "🔕";
+  el.notifBtn.classList.toggle("off", !on);
+  el.notifBtn.title = denied
+    ? "Trình duyệt đã chặn thông báo — mở biểu tượng ổ khoá để cho phép"
+    : on
+    ? "Đang bật thông báo tin nhắn (bấm để tắt)"
+    : "Bật thông báo khi có tin nhắn mới";
+  el.notifBtn.setAttribute("aria-pressed", String(on));
+}
+
+async function toggleNotifications() {
+  if (!notifSupported()) {
+    toast("Trình duyệt này không hỗ trợ thông báo desktop.", "error");
+    return;
+  }
+  if (notifEnabled()) {
+    try {
+      localStorage.setItem(KEY_NOTIF, "off");
+    } catch {
+      /* bỏ qua */
+    }
+    renderNotifButton();
+    toast("Đã tắt thông báo tin nhắn.", "");
+    return;
+  }
+
+  if (Notification.permission === "denied") {
+    toast("Trình duyệt đang chặn thông báo — mở biểu tượng ổ khoá trên thanh địa chỉ để cho phép.", "error");
+    return;
+  }
+
+  let perm = Notification.permission;
+  if (perm !== "granted") perm = await Notification.requestPermission();
+  if (perm !== "granted") {
+    toast("Bạn chưa cho phép thông báo.", "error");
+    return;
+  }
+
+  try {
+    localStorage.setItem(KEY_NOTIF, "on");
+  } catch {
+    /* bỏ qua */
+  }
+  renderNotifButton();
+  toast("Đã bật thông báo khi tab bị thu nhỏ.", "success");
+}
+
+/** Chỉ bắn thông báo OS khi tab đang ẩn và người dùng đã bật. */
+function notifyChat(row) {
+  if (!notifEnabled()) return;
+  if (!document.hidden) return;
+  if (row.person_name === state.person) return;
+
+  const text = String(row.message || "").slice(0, 120);
+  try {
+    const n = new Notification(`${row.person_name} — Đặt cơm công ty`, {
+      body: text,
+      tag: `chat-${row.id || Date.now()}`,
+      icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍚</text></svg>",
+      silent: false,
+    });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+      scrollToChat(row.id);
+    };
+  } catch {
+    /* một số trình duyệt ném lỗi nếu thiếu service worker — bỏ qua */
+  }
+}
+
+function scrollToChat(id) {
+  const target = id ? el.chatList?.querySelector(`[data-chat-id="${id}"]`) : null;
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.add("flash");
+    setTimeout(() => target.classList.remove("flash"), 1400);
+  } else {
+    el.chatList?.scrollTo({ top: el.chatList.scrollHeight, behavior: "smooth" });
+  }
+}
+
+/** Lần đầu vào trang (đã có tên): gợi ý bật thông báo nếu chưa chọn. */
+function maybeAskNotifications() {
+  if (!notifSupported() || !state.person) return;
+  if (Notification.permission === "denied") return;
+  try {
+    if (localStorage.getItem(KEY_NOTIF)) return; // đã chọn on/off
+  } catch {
+    return;
+  }
+  // Không xin quyền tự động (trình duyệt sẽ chặn); nháy nút 🔔 để mời bấm.
+  if (el.notifBtn) {
+    el.notifBtn.classList.add("hint-pulse");
+    el.notifBtn.title = "Bật thông báo để nhận tin nhắn khi thu nhỏ tab";
+    setTimeout(() => el.notifBtn.classList.remove("hint-pulse"), 8000);
+  }
+}
+
+function avatarColor(name) {
+  let h = 0;
+  for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return `hsl(${h} 65% 45%)`;
+}
+
+function showChatToast(row) {
+  if (!el.toastStack || !row) return;
+  if (row.person_name === state.person) return;
+
+  // Tab đang ẩn → thông báo hệ điều hành (Windows), khỏi toast trong trang.
+  if (document.hidden && notifEnabled()) {
+    notifyChat(row);
+    return;
+  }
+
+  const toast = document.createElement("button");
+  toast.type = "button";
+  toast.className = "toast";
+  toast.dataset.chatId = row.id || "";
+
+  const initial = (row.person_name || "?").trim().charAt(0).toUpperCase();
+  const time = row.created_at
+    ? new Date(row.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+    : "";
+
+  const av = document.createElement("span");
+  av.className = "toast-avatar";
+  av.textContent = initial;
+  av.style.background = avatarColor(row.person_name);
+
+  const body = document.createElement("span");
+  body.className = "toast-body";
+  const head = document.createElement("span");
+  head.className = "toast-head";
+  head.textContent = `${row.person_name}${time ? " · " + time : ""}`;
+  const text = document.createElement("span");
+  text.className = "toast-text";
+  text.textContent = row.message || "";
+  body.append(head, text);
+
+  toast.append(av, body);
+  el.toastStack.append(toast);
+
+  while (el.toastStack.children.length > TOAST_MAX) el.toastStack.firstElementChild?.remove();
+
+  let timer = setTimeout(() => remove(), TOAST_LIFE_MS);
+  function remove() {
+    clearTimeout(timer);
+    toast.classList.add("out");
+    setTimeout(() => toast.remove(), 180);
+  }
+  toast.addEventListener("mouseenter", () => clearTimeout(timer));
+  toast.addEventListener("mouseleave", () => {
+    timer = setTimeout(remove, 2000);
+  });
+  toast.addEventListener("click", () => {
+    remove();
+    scrollToChat(row.id);
+  });
 }
 
 /* ---------------- Ordering (1 món / người / ngày) ---------------- */
@@ -744,6 +1173,10 @@ async function placeOrder(dishId, { replace = false } = {}) {
   if (!state.person) {
     openNameModal();
     return { ok: false, reason: "no-person" };
+  }
+  if (isPastCutoff(new Date())) {
+    toast(`Đã chốt đơn lúc ${CUTOFF_HOUR}:00 hôm nay.`, "error");
+    return { ok: false, reason: "locked" };
   }
   if (state.pendingDishIds.size) return { ok: false, reason: "busy" };
 
@@ -870,8 +1303,11 @@ function refreshMineUI() {
     const isPending = state.pendingDishIds.has(dishId);
     btn.classList.toggle("done", selected);
     btn.classList.toggle("busy", isPending);
-    btn.textContent = selected ? "✓" : isPending ? "…" : "+";
-    btn.disabled = isPending || busy || !state.person;
+    // Chỉ nút "+" trên card món mới đổi chữ; chip gợi ý / dòng top chỉ đổi trạng thái.
+    if (btn.classList.contains("add-btn")) {
+      btn.textContent = selected ? "✓" : isPending ? "…" : "+";
+    }
+    btn.disabled = isPending || busy || !state.person || state.locked === true;
     btn.title = selected
       ? "Bạn đã chọn món này"
       : mine.length
@@ -1542,7 +1978,7 @@ function renderChat({ scroll = false } = {}) {
         minute: "2-digit",
       });
       return `
-      <div class="chat-msg${mine ? " mine" : ""}" data-id="${escapeHtml(m.id)}">
+      <div class="chat-msg${mine ? " mine" : ""}" data-id="${escapeHtml(m.id)}" data-chat-id="${escapeHtml(m.id)}">
         <div class="chat-bubble">
           ${mine ? "" : `<div class="chat-author">${escapeHtml(m.person_name)}</div>`}
           <div class="chat-text">${escapeHtml(m.message)}</div>
@@ -1663,6 +2099,10 @@ function renderOrders() {
 async function deleteOrder(orderId) {
   const order = state.orders.find((o) => o.id === orderId);
   if (!order) return;
+  if (isDateLocked(order.order_date, new Date())) {
+    toast(`Đã chốt đơn lúc ${CUTOFF_HOUR}:00 hôm nay — không xoá được nữa.`, "error");
+    return;
+  }
   const label = `"${order.dish_name}" của ${order.person_name}`;
   if (!window.confirm(`Xóa đơn ${label}?`)) return;
 
@@ -1717,6 +2157,15 @@ el.copyBtn.addEventListener("click", async () => {
 
 /* ---------------- Realtime ---------------- */
 
+/** Gom nhiều event realtime trong 2s thành 1 lần đếm lại top món. */
+function scheduleTopDishesReload() {
+  if (state.topDishesTimer) clearTimeout(state.topDishesTimer);
+  state.topDishesTimer = setTimeout(() => {
+    state.topDishesTimer = null;
+    loadTopDishes().catch(() => {});
+  }, 2000);
+}
+
 function subscribeRealtime() {
   if (state.realtimeChannel) state.supabase.removeChannel(state.realtimeChannel);
 
@@ -1727,6 +2176,7 @@ function subscribeRealtime() {
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "orders" },
       ({ new: row }) => {
+        scheduleTopDishesReload();
         if (row.order_date !== today) return;
         if (state.orders.some((o) => o.id === row.id)) return;
         state.orders.push(row);
@@ -1738,6 +2188,7 @@ function subscribeRealtime() {
       "postgres_changes",
       { event: "DELETE", schema: "public", table: "orders" },
       ({ old: row }) => {
+        scheduleTopDishesReload();
         if (!state.orders.some((o) => o.id === row.id)) return;
         state.orders = state.orders.filter((o) => o.id !== row.id);
         renderOrders();
@@ -1796,6 +2247,7 @@ function subscribeRealtime() {
         if (state.chat.some((m) => m.id === row.id)) return;
         state.chat.push(row);
         renderChat({ scroll: true });
+        showChatToast(row);
       }
     )
     .on(
@@ -1834,6 +2286,13 @@ async function loadAll() {
     state.loaded = true;
     syncPersonGates();
     subscribeRealtime();
+    state.locked = isPastCutoff(new Date());
+    renderLockBanner();
+    try {
+      await loadTopDishes();
+    } catch {
+      /* bảng orders chưa có dữ liệu / lỗi mạng: ẩn card */
+    }
     loadWeather();
   } catch (err) {
     showError("Không kết nối được Supabase.", err.message || String(err));
@@ -1873,6 +2332,17 @@ async function init() {
   }
 
   await loadAll();
+
+  bindReminder();
+  renderNotifButton();
+  el.notifBtn?.addEventListener("click", toggleNotifications);
+  maybeAskNotifications();
+  applyLockState();
+  if (state.lockTimer) clearInterval(state.lockTimer);
+  state.lockTimer = setInterval(applyLockState, 60000);
+  if (state.remindTimer) clearInterval(state.remindTimer);
+  state.remindTimer = setInterval(maybeShowReminder, 60000);
+  setTimeout(maybeShowReminder, 800);
 }
 
 function bootSafely() {

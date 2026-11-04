@@ -44,5 +44,14 @@
 | Danh sách trống dù vừa đặt | Máy đó có ngày khác (múi giờ) — kiểm tra đồng hồ hệ thống. |
 | Món NEW không có viền chạy | Trình duyệt cũ không hỗ trợ `@property` hoặc đang bật giảm chuyển động — viền màu tĩnh vẫn hiện, không phải lỗi. |
 | Panel thời tiết trống / ẩn | Không gọi được `api.open-meteo.com` (chặn mạng/firewall). Block gợi ý món cũng ẩn; trang đặt cơm không bị ảnh hưởng. |
+| Ngày nào cũng gợi ý món nước | Đã sửa: phân loại theo **lượng mưa mm** (≥5 mm trong 17–20h) thay cho % mưa. Nếu vẫn lệch, xem `evening.rainMm` trong Console → `state.weather`. Muốn nhạy/ì hơn: sửa `RAIN_HEAVY_MM` / `RAIN_LIGHT_MM` trong `js/weather.js`. |
+| Dự báo mưa nhưng trời không mưa | `% mưa` là khả năng có mưa **ở đâu đó trong vùng ~11 km**, không phải tại chỗ bạn đứng; mưa rào rất cục bộ. Nay app chỉ đổi nhóm món khi lượng mưa thật ≥ 5 mm/khung 3h. |
 | Block gợi ý món không hiện | Không có món nào trong menu khớp từ khoá thời tiết (mưa → món nước, nóng → món mát). Thêm món phù hợp hoặc mở rộng `COOL_KEYWORDS`/`HOT_KEYWORDS` trong `js/weather.js`. |
 | Gợi ý ít hơn 10 món | Đúng thiết kế: chỉ lấy món khớp từ khoá, không bổ sung món ngoài luật. |
+| Bị khoá đặt nhưng cần đặt bù | Đã qua 18:00 ngày làm việc. Chờ hôm sau, hoặc thêm trực tiếp trong Supabase → Table `orders` (nhớ `order_date`, `person_name`, `dish_name`, `restaurant_name`). |
+| Khoá quá sớm / quá muộn | Kiểm tra giờ hệ thống của máy. Đổi mốc: `CUTOFF_HOUR`, `CUTOFF_WEEKDAYS` trong `js/config.js`. |
+| Popup 16:30 không hiện | Chưa nhập tên, đã đặt món hôm nay, ngoài khung 16:30–18:00, là cuối tuần, hoặc đã bấm "Để sau". Xoá key `dedatcom_remind` trong localStorage để thử lại. |
+| Trang Lịch sử trống | Chọn đúng tháng; kiểm tra Console (lỗi quyền `orders read` → chạy lại `schema.sql`). |
+| Không có toast khi có tin mới | Tin của chính bạn thì không toast; cũng cần chạy phần `MIGRATION: Chat nội bộ` và realtime cho bảng `chat_messages`. |
+| Không thấy thông báo trên Windows | 1) Trang phải là HTTPS/localhost (truy cập `http://<IP>` thì trình duyệt chặn). 2) Chưa bấm 🔔 / đã bấm Chặn. 3) Windows tắt thông báo cho Edge/Chrome hoặc bật Focus assist. 4) Tab đang mở (khi đó chỉ có toast trong trang). |
+| Nút 🔔 bị ẩn | Trình duyệt không hỗ trợ Notification API (rất cũ), hoặc trang chạy trên `http://` không bảo mật. |

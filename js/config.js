@@ -15,5 +15,13 @@ export const WEATHER_LON = 106.7009;
 export const WEATHER_CITY = "TP.HCM";
 export const WEATHER_TZ = "Asia/Ho_Chi_Minh";
 
+// Chốt đơn: 18:00 các ngày T2–T6 (0 = CN, 6 = T7)
+export const CUTOFF_HOUR = 18;
+export const CUTOFF_WEEKDAYS = [1, 2, 3, 4, 5];
+
+// Popup nhắc đặt cơm: 16:30 → tới giờ chốt
+export const REMINDER_START_MINUTES = 16 * 60 + 30;
+export const REMINDER_SNOOZE_MIN = 15;
+
 export const isConfigured = () =>
   SUPABASE_URL.trim().startsWith("http") && SUPABASE_ANON_KEY.trim().length > 20;

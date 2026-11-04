@@ -38,7 +38,7 @@ create table if not exists public.orders (
   person_id       uuid,
   order_date      date not null,
   created_at      timestamptz not null default now(),
-  constraint person_name_len check (char_length(person_name) between 1 and 40)
+  constraint person_name_len check (char_length(person_name) between 1 and 16)
 );
 
 create index if not exists orders_date_idx on public.orders (order_date, created_at);
@@ -156,7 +156,7 @@ create table if not exists public.reviews (
   comment       text,
   created_at    timestamptz not null default now(),
   constraint reviews_rating_range check (rating between 1 and 5),
-  constraint reviews_person_len   check (char_length(person_name) between 1 and 40),
+  constraint reviews_person_len   check (char_length(person_name) between 1 and 16),
   constraint reviews_comment_len  check (comment is null or char_length(comment) <= 300)
 );
 
@@ -194,7 +194,7 @@ create table if not exists public.chat_messages (
   person_name text not null,
   message     text not null,
   created_at  timestamptz not null default now(),
-  constraint chat_person_len  check (char_length(person_name) between 1 and 40),
+  constraint chat_person_len  check (char_length(person_name) between 1 and 16),
   constraint chat_message_len check (char_length(message) between 1 and 300)
 );
 
@@ -244,6 +244,22 @@ alter table public.orders
 
 create index if not exists orders_person_idx
   on public.orders (order_date, person_id);
+
+-- =============================================================
+-- MIGRATION: Tên người đặt tối đa 16 ký tự (chống spam tên dài)
+-- Chạy phần này nếu database đã tồn tại từ phiên bản trước.
+-- Chú ý: nếu đã có tên dài hơn 16 ký tự, hãy sửa các dòng đó trước,
+-- nếu không bước add constraint sẽ báo lỗi.
+-- =============================================================
+
+alter table public.orders  drop constraint if exists person_name_len;
+alter table public.orders  add  constraint person_name_len  check (char_length(person_name) between 1 and 16);
+
+alter table public.reviews drop constraint if exists reviews_person_len;
+alter table public.reviews add  constraint reviews_person_len check (char_length(person_name) between 1 and 16);
+
+alter table public.chat_messages drop constraint if exists chat_person_len;
+alter table public.chat_messages add  constraint chat_person_len check (char_length(person_name) between 1 and 16);
 
 -- ---------- (Tuỳ chọn) Tự xóa đơn cũ hơn 31 ngày bằng pg_cron ----------
 -- Chỉ chạy nếu project hỗ trợ extension pg_cron. Nếu lỗi, bỏ qua phần này

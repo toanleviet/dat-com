@@ -9,7 +9,11 @@ const EVENING_TO = 20;
 const HOT_TEMP = 33;
 const COOL_TEMP = 24;
 const HUMID_PCT = 80;
-const RAIN_PCT = 60;
+
+// Lượng mưa (mm) trong khung 17–20h — nguồn sự thật để phân loại "mưa".
+// Xấp xỉ theo ngày: 5 mm/3h ≙ ~25 mm/ngày (mưa thật), 2 mm/3h ≙ ~10 mm/ngày (mưa nhẹ).
+const RAIN_HEAVY_MM = 5;
+const RAIN_LIGHT_MM = 2;
 
 const HOT_KEYWORDS = [
   "tron",
@@ -97,19 +101,55 @@ function isoHour(date) {
 
 
 /**
- * Tính các mốc từ payload Open-Meteo (timezone Asia/Ho_Chi_Minh).
- * Tách riêng để test được bằng Node không cần mạng.
+ * "Bây giờ" theo giờ ĐỊA PHƯƠNG của dữ liệu (Open-Meteo trả giờ đã theo `timezone`),
+ * KHÔNG dùng giờ máy — máy ở múi giờ khác sẽ cắt sai khung giờ.
  */
-export function buildWeather(payload, now = new Date()) {
+function localNow(payload, fallback = new Date()) {
+  const raw = payload?.current?.time;
+  const m = typeof raw === "string" ? raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/) : null;
+  if (m) {
+    const [, y, mo, d, h, mi] = m;
+    return {
+      isoHour: `${y}-${mo}-${d}T${h}:00`,
+      hour: Number(h),
+      dayStr: `${y}-${mo}-${d}`,
+      minutes: Number(mi),
+    };
+  }
+  const pad = (n) => String(n).padStart(2, "0");
+  return {
+    isoHour: `${fallback.getFullYear()}-${pad(fallback.getMonth() + 1)}-${pad(
+      fallback.getDate()
+    )}T${pad(fallback.getHours())}:00`,
+    hour: fallback.getHours(),
+    dayStr: `${fallback.getFullYear()}-${pad(fallback.getMonth() + 1)}-${pad(fallback.getDate())}`,
+    minutes: fallback.getMinutes(),
+  };
+}
+
+function nextDay(dayStr) {
+  const [y, m, d] = dayStr.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d) + 86400000);
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    t.getUTCDate()
+  ).padStart(2, "0")}`;
+}
+
+/**
+ * Tính các mốc từ payload Open-Meteo (timezone Asia/Ho_Chi_Minh).
+ * `fallbackNow` chỉ dùng khi payload thiếu `current.time`.
+ */
+export function buildWeather(payload, fallbackNow = new Date()) {
   const cur = payload && payload.current;
   const hourly = payload && payload.hourly;
   if (!cur || !hourly || !Array.isArray(hourly.time)) throw new Error("Dữ liệu thời tiết không hợp lệ.");
 
   const times = hourly.time;
+  const nowLocal = localNow(payload, fallbackNow);
+  const nowHour = nowLocal.isoHour;
 
-  const nowHour = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
-    now.getDate()
-  ).padStart(2, "0")}T${String(now.getHours()).padStart(2, "0")}:00`;
+  const round1 = (v) => Math.round((Number(v) || 0) * 10) / 10;
+  const precipAt = (i) => round1(hourly.precipitation?.[i] ?? 0);
 
   const nextHours = [];
   for (let i = 0; i < times.length && nextHours.length < NEXT_HOURS; i++) {
@@ -119,17 +159,13 @@ export function buildWeather(payload, now = new Date()) {
         temp: Math.round(hourly.temperature_2m[i]),
         humidity: Math.round(hourly.relative_humidity_2m[i]),
         rain: Math.round(hourly.precipitation_probability?.[i] ?? 0),
+        mm: precipAt(i),
       });
     }
   }
 
-  const todayStr = nowHour.slice(0, 10);
-  const tomorrowStr = (() => {
-    const t = new Date(now.getTime() + 86400000);
-    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(
-      t.getDate()
-    ).padStart(2, "0")}`;
-  })();
+  const todayStr = nowLocal.dayStr;
+  const tomorrowStr = nextDay(todayStr);
 
   const collectEvening = (dayStr) => {
     const out = [];
@@ -142,16 +178,29 @@ export function buildWeather(payload, now = new Date()) {
     return out;
   };
 
-  // Còn giờ 17–20h hôm nay thì dùng hôm nay; quá 20h thì dự báo chiều mai.
+  // Còn giờ 17–20h hôm nay thì dùng hôm nay; quá 20h (giờ địa phương) thì dự báo chiều mai.
   let useTomorrow = false;
   let idx = collectEvening(todayStr);
-  if (!idx.length || now.getHours() > EVENING_TO) {
+  if (!idx.length || nowLocal.hour > EVENING_TO) {
     const tmIdx = collectEvening(tomorrowStr);
     if (tmIdx.length) {
       useTomorrow = true;
       idx = tmIdx;
     }
   }
+
+  // Nhiệt độ "trưa" (11–16h) — phản ánh đúng cái nóng ban ngày, không bị mưa chiều làm nguội.
+  const collectMidday = (dayStr) => {
+    const out = [];
+    for (let i = 0; i < times.length; i++) {
+      const t = times[i];
+      if (t.slice(0, 10) !== dayStr) continue;
+      const h = Number(t.slice(11, 13));
+      if (h >= 11 && h <= 16 && hourly.temperature_2m[i] != null) out.push(hourly.temperature_2m[i]);
+    }
+    return out;
+  };
+  const middayVals = useTomorrow ? collectMidday(tomorrowStr) : collectMidday(todayStr);
 
   const avg = (arr) =>
     arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
@@ -160,10 +209,13 @@ export function buildWeather(payload, now = new Date()) {
     toHour: EVENING_TO,
     tomorrow: useTomorrow,
     avgTemp: avg(idx.map((i) => hourly.temperature_2m[i]).filter((v) => v != null)),
+    maxTemp: middayVals.length ? Math.round(Math.max(...middayVals)) : null,
     avgHumidity: avg(idx.map((i) => hourly.relative_humidity_2m[i]).filter((v) => v != null)),
     maxRain: idx.length
       ? Math.max(...idx.map((i) => hourly.precipitation_probability?.[i] ?? 0))
       : null,
+    // Tổng lượng mưa khung 17–20h (mm) — dùng để phân loại mưa thay cho %.
+    rainMm: idx.length ? round1(idx.reduce((sum, i) => sum + precipAt(i), 0)) : null,
     label: idx.length ? describeCode(hourly.weather_code?.[idx[0]]).label : "",
     icon: idx.length ? describeCode(hourly.weather_code?.[idx[0]]).icon : "🌤️",
   };
@@ -177,7 +229,7 @@ export function buildWeather(payload, now = new Date()) {
       code: cur.weather_code,
       label: nowCode.label,
       icon: nowCode.icon,
-      raining: (cur.precipitation ?? 0) > 0 || Number(cur.weather_code) >= 51,
+      raining: (cur.precipitation ?? 0) >= 0.5 && Number(cur.weather_code) >= 51,
     },
     nextHours,
     evening,
@@ -193,7 +245,7 @@ export async function fetchWeather({ force = false } = {}) {
     latitude: String(WEATHER_LAT),
     longitude: String(WEATHER_LON),
     current: "temperature_2m,relative_humidity_2m,weather_code,precipitation",
-    hourly: "temperature_2m,relative_humidity_2m,precipitation_probability,weather_code",
+    hourly: "temperature_2m,relative_humidity_2m,precipitation,precipitation_probability,weather_code",
     forecast_days: "2",
     timezone: WEATHER_TZ,
   });
@@ -213,14 +265,25 @@ export async function fetchWeather({ force = false } = {}) {
   }
 }
 
+/** Cấp mưa theo tổng mm khung 17–20h. */
+export function rainLevel(mm) {
+  if (mm == null) return "none";
+  if (mm >= RAIN_HEAVY_MM) return "heavy";
+  if (mm >= RAIN_LIGHT_MM) return "light";
+  return "none";
+}
+
 export function classifyWeather(weather) {
   if (!weather) return "mild";
   const e = weather.evening || {};
   const c = weather.current || {};
-  const temp = e.avgTemp != null ? e.avgTemp : c.temp;
+  // Cái nóng ban ngày phản ánh bằng nhiệt độ trưa (11–16h), không dùng TB 17–20h
+  // vì mưa chiều hạ nhiệt độ xuống rất sâu.
+  const temp = e.maxTemp != null ? e.maxTemp : e.avgTemp != null ? e.avgTemp : c.temp;
   const humidity = e.avgHumidity != null ? e.avgHumidity : c.humidity;
 
-  if ((e.maxRain != null && e.maxRain >= RAIN_PCT) || c.raining === true) return "rainy";
+  // Chỉ xếp "mưa" khi lượng mưa thật đủ lớn; % khả năng mưa không dùng để phân loại.
+  if (rainLevel(e.rainMm) === "heavy") return "rainy";
   if (temp != null && temp >= HOT_TEMP) return "hot";
   if (temp != null && temp <= COOL_TEMP) return "cool";
   if (humidity != null && humidity >= HUMID_PCT) return "humid";
@@ -240,24 +303,29 @@ export function weatherClassLabel(cls) {
 }
 
 export function adviceTemplate(cls, weather) {
-  const rain = weather?.evening?.maxRain;
-  const temp = weather?.evening?.avgTemp;
+  const mm = weather?.evening?.rainMm;
+  const pct = weather?.evening?.maxRain;
+  const temp = weather?.evening?.maxTemp ?? weather?.evening?.avgTemp;
   const when = weather?.evening?.tomorrow ? "Chiều mai" : "Chiều nay";
   switch (cls) {
     case "rainy":
-      return `${when} mưa tới ${rain ?? "?"}%${
+      return `${when} mưa ~${mm ?? "?"} mm${
         temp != null ? `, ~${temp}°C` : ""
       } — món nước như mì, bún, phở, canh, lẩu cho ấm bụng.`;
     case "hot":
-      return `Trời nóng${temp != null ? ` (~${temp}°C)` : ""} — ưu tiên món trộn, gỏi, cuốn cho mát.`;
+      return rainLevel(mm) === "light"
+        ? `Trời nóng${temp != null ? ` (~${temp}°C)` : ""} — chiều có mưa nhẹ (~${mm} mm), chọn món trộn, gỏi, cuốn cho mát.`
+        : `Trời nóng${temp != null ? ` (~${temp}°C)` : ""} — ưu tiên món trộn, gỏi, cuốn cho mát.`;
     case "humid":
-      return (weather?.evening?.maxRain ?? 0) >= 40
-        ? "Nóng ẩm, chiều có thể mưa — món trộn, gỏi, hoặc món nước nhẹ bụng đều hợp."
+      return rainLevel(mm) === "light"
+        ? `Nóng ẩm, chiều có mưa nhẹ ~${mm} mm — món trộn, gỏi, hoặc món nước nhẹ bụng đều hợp.`
         : "Nóng ẩm dễ ngán — món trộn, gỏi, đồ chua nhẹ sẽ dễ ăn hơn món nhiều dầu mỡ.";
     case "cool":
       return `Trời mát${temp != null ? ` (~${temp}°C)` : ""} — món nước, canh, nướng là lựa chọn hợp lý.`;
     default:
-      return "Thời tiết dễ chịu — ăn gì cũng được, tham khảo các món được đánh giá cao bên dưới.";
+      return rainLevel(mm) === "light"
+        ? `Thời tiết dễ chịu, chiều có mưa nhẹ ~${mm} mm — ăn gì cũng được, tham khảo món được đánh giá cao.`
+        : "Thời tiết dễ chịu — ăn gì cũng được, tham khảo các món được đánh giá cao bên dưới.";
   }
 }
 
@@ -281,7 +349,7 @@ export function pickWeatherDishes(dishes, weather, stats, limit = 10) {
   const list = Array.isArray(dishes) ? dishes : [];
   if (!list.length) return { items: [], cls };
 
-  const rainyEvening = (weather?.evening?.maxRain ?? 0) >= 40;
+  const rainyEvening = rainLevel(weather?.evening?.rainMm) !== "none";
   let keys = [];
   if (cls === "hot" || cls === "humid") {
     // Vừa nóng vừa có mưa chiều: cả món mát lẫn món nước đều hợp lý.

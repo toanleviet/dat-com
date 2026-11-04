@@ -39,20 +39,104 @@ Danh sách chính chỉ hiển thị đơn của **ngày hiện tại theo giờ
 ## Thời tiết & món gợi ý
 
 - Cột **bên trái** (mobile: đầu trang) hiện thời tiết **TP.HCM**: nhiệt độ + độ ẩm hiện tại,
-  4 khung giờ kế tiếp (nhiệt độ · độ ẩm · % mưa), và tóm tắt **chiều tối 17–20h**
-  (nhiệt độ TB, độ ẩm TB, xác suất mưa cao nhất). Sau 20h thì chuyển thành dự báo **chiều mai**.
+  4 khung giờ kế tiếp (nhiệt độ · độ ẩm · lượng mưa mm), và tóm tắt **chiều tối 17–20h**
+  (nhiệt độ TB, độ ẩm TB, **tổng lượng mưa mm** + nhãn 🟡 mưa nhẹ / 🔴 mưa to). Sau 20h thì
+  chuyển thành dự báo **chiều mai**.
 - Dữ liệu lấy từ Open-Meteo, tự cập nhật mỗi ~10 phút (cache trình duyệt). Không có mạng
   thì panel hiện dữ liệu cũ (ghi rõ giờ) hoặc ẩn đi — trang đặt cơm vẫn dùng bình thường.
+
+### Vì sao dùng mm thay vì % mưa
+
+- `% mưa` của nhà cung cấp là **khả năng có mưa ở đâu đó trong vùng rộng ~11 km**, không phải
+  khả năng bạn bị ướt → TP.HCM mùa mưa gần như ngày nào cũng ≥ 60%, gây cảm giác "báo mưa mà không mưa".
+- App phân loại theo **lượng mưa thật (mm) trong khung 17–20h**:
+  - **≥ 5 mm (≈ 25 mm/ngày)** → coi là **mưa**, ưu tiên món nước.
+  - **2 – < 5 mm** → chỉ ghi chú "mưa nhẹ", **không** đổi nhóm món.
+  - **< 2 mm** → coi như không mưa.
+- `%` vẫn hiện trong tooltip để tham khảo.
+
+### Ngưỡng mưa tham khảo (thang 24h của NCHMF)
+
+| 24h | Cấp | Ghi chú |
+| --- | --- | --- |
+| < 10 mm | mưa nhỏ | ướt đường, không cần áo mưa |
+| 10–<50 mm | mưa vừa | cần áo mưa, đọng nước |
+| 50–<100 mm | mưa to | ngập cục bộ |
+| ≥ 100 mm | rất to | ngập diện rộng |
+
+(60 ngày qua tại Quận 4: cao nhất 41.6 mm, không có ngày nào ≥ 50 mm.)
+
 - Block **"🍽️ Món gợi ý theo thời tiết"** nằm **trên đầu danh sách món**:
   - Một câu mô tả theo thời tiết hiện tại (chiều tối 17–20h, hoặc chiều mai nếu đã quá 20h).
   - Món gợi ý chọn bằng **luật từ khoá** trên menu của **cả Hải Nam và Dejavu**:
     mưa hoặc mát → món nước/nóng (mì, bún, phở, hủ tiếu, miến, cháo, canh, súp, lẩu, kho, nướng);
     nóng hoặc nóng ẩm → món mát (trộn, gỏi, nộm, cuốn, salad, chè, sinh tố, đồ chua).
-  - Hiện **tối đa 10 món khớp** — món hợp thời tiết nào còn trong menu thì lấy thêm; **không bổ
-    sung món ngoài luật**, nên hôm nào menu ít món hợp thì gợi ý ít hơn.
   - Điểm đánh giá cao được xếp lên trước khi cùng khớp từ khoá.
-  - Bấm **+** ngay trên chip gợi ý để đặt món — vẫn tuân thủ **1 món/người/ngày**, và món
-    không thuộc menu đang mở có ghi kèm tên quán.
+  - **Nhấp thẳng vào thẻ món** để đặt (không cần nút `+`); rê chuột lên thẻ thì thẻ sáng lên.
+    Thẻ của món bạn đã đặt sẽ mờ đi và không bấm được.
+  - Vẫn tuân thủ **1 món/người/ngày**, và món không thuộc menu đang mở có ghi kèm tên quán.
+
+## Món đặt nhiều
+
+- Card **🔥 Món đặt nhiều** nằm ngay **dưới card Thời tiết** (cột trái; mobile: đầu trang).
+- Top **10 món** có nhiều lượt đặt nhất trong **30 ngày gần nhất**, tính trên đơn của tất cả mọi người.
+- Mỗi dòng hiện hạng (🥇🥈🥉 cho 3 món đầu), tên món, tên quán và số lượt `×N` kèm thanh tỉ lệ.
+- Nhấp vào dòng món còn trong menu để đặt; món đã bị xoá khỏi menu vẫn hiện số liệu nhưng không bấm được.
+- Danh sách tự cập nhật trong ~2 giây khi có người đặt hoặc xoá đơn.
+
+## Chốt đơn hằng ngày
+
+- Mỗi ngày **T2–T6**, đơn tự **chốt lúc 18:00**. Sau mốc này: không đặt mới, không đổi món,
+  không xoá đơn của ngày hôm đó. Banner 🔒 xuất hiện trên khung "Chọn món".
+- **Thứ 7 và Chủ nhật không chốt** (ngày nghỉ) — nếu có ai đặt vào cuối tuần, đơn vẫn được ghi
+  và hiện trong lịch sử.
+- Ngày đã qua luôn ở trạng thái chỉ-xem. Muốn đặt bù sau giờ chốt thì phải chờ hôm sau (hoặc
+  sửa trực tiếp trong Supabase — xem `docs/xu-ly-su-co.md`).
+- Đổi giờ chốt: sửa `CUTOFF_HOUR` / `CUTOFF_WEEKDAYS` trong `js/config.js`.
+
+## Lịch sử đơn
+
+- Bấm **📜 Lịch sử đơn** trên thanh trên cùng (cũng có trong `setup.html`).
+- Trang `history.html` hiện **theo tháng**, nhóm theo **ngày → từng người**: tên người, món, quán.
+- Ngày làm việc có nhãn `🔒 chốt 18:00`; cuối tuần có nhãn `cuối tuần`.
+- Đổi tháng bằng ô chọn tháng; tổng số ngày/đơn/người hiện ở góc phải thanh công cụ.
+- Lịch sử chỉ để xem — không sửa/xoá được từ trang này.
+- Lưu ý: nút **Xoá toàn bộ đơn** ở `setup.html` xoá **tất cả** đơn (kể cả lịch sử).
+
+## Popup nhắc đặt cơm
+
+- Mỗi ngày làm việc, trong khung **16:30 → 18:00**, nếu bạn **chưa đặt món** thì hiện popup
+  "🍚 Đặt cơm ae ơi!!!" kèm số phút còn lại tới giờ chốt.
+- **Đặt ngay**: đóng popup và cuộn tới danh sách món.
+- **Để sau 15'**: ẩn 15 phút rồi nhắc lại (chỉ khi vẫn trong khung 16:30–18:00).
+- Mỗi ngày chỉ nhắc lại nếu bạn chưa đặt; đã đặt món thì không hiện. Thứ 7/CN không hiện.
+- Trạng thái lưu ở `localStorage` (`dedatcom_remind`); xoá key này nếu muốn thấy popup lại.
+
+## Thông báo chat
+
+- Khi có người khác gửi tin trong Chat nội bộ, một **toast** trượt vào góc dưới phải (giống
+  Microsoft Teams): avatar chữ cái, tên người gửi, giờ, nội dung 2 dòng.
+- Bấm vào toast → cuộn tới tin đó và làm nổi bật tin (viền vàng nhấp nháy).
+- Tự ẩn sau 6 giây (rê chuột vào thì tạm dừng), tối đa 3 toast cùng lúc.
+- Tin do chính bạn gửi không tạo toast.
+
+### Thông báo trên Windows khi thu nhỏ tab
+
+- Bấm nút **🔕** trên thanh trên cùng → chọn **Cho phép** khi trình duyệt hỏi. Nút đổi thành **🔔**.
+- Từ đó, nếu **tab đang bị thu nhỏ/ở nền**, tin nhắn mới của người khác sẽ hiện thành
+  **thông báo Windows** (góc màn hình) kèm tên người gửi và nội dung.
+- Bấm vào thông báo → quay lại tab và nhảy tới đúng tin.
+- Khi tab đang mở thì chỉ hiện toast trong trang (tránh 2 thông báo trùng).
+- Bấm 🔔 lần nữa để tắt.
+
+**Điều kiện để dùng được:**
+
+| Điều kiện | Ghi chú |
+| --- | --- |
+| Trang chạy **HTTPS** hoặc **localhost** | `http://<IP-LAN>` **không** dùng được — cần deploy (Netlify/GitHub Pages) hoặc tunnel |
+| Trình duyệt đang chạy (kể cả thu nhỏ) | Tắt hẳn trình duyệt thì không có thông báo |
+| Windows cho phép thông báo cho Edge/Chrome | Settings → System → Notifications → bật, tắt Focus assist |
+| Đã bấm Cho phép | Nếu lỡ bấm Chặn: bấm biểu tượng ổ khoá trên thanh địa chỉ → Notifications → Allow |
 
 ## Nhãn NEW cho món mới
 

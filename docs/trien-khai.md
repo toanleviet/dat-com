@@ -37,9 +37,12 @@ build command. (Nhớ đã điền `js/config.js` trước khi deploy.)
 
 ```
 index.html                    trang đặt cơm
+history.html                  trang lịch sử đơn (theo tháng, nhóm theo ngày)
 setup.html                    trang quản lý món + xóa dữ liệu
 css/style.css
-js/config.js                  SUPABASE_URL, SUPABASE_ANON_KEY (điền tay)
+js/config.js                  SUPABASE_URL/ANON_KEY, toạ độ thời tiết, giờ chốt đơn
+js/schedule.js                helper chốt đơn 18:00 / khung nhắc 16:30
+js/history.js                 tải & render lịch sử đơn
 js/supabase-client.js         khởi tạo client
 js/app.js                     đặt cơm + list realtime + copy + vòng quay + đánh giá
 js/weather.js                 thời tiết Open-Meteo (TP.HCM) + luật gợi ý món

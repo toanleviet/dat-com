@@ -19,7 +19,9 @@ Cơm sườn_(Hải Nam) - An
 - **Nhãn NEW** — tick ở trang Setup: món viền gradient chạy, nhãn NEW phát sáng, luôn đứng đầu menu.
 - **Gợi ý món theo thời tiết TP.HCM** — panel trái hiện thời tiết hiện tại + mưa chiều tối,
   đầu danh sách món gợi ý tối đa 10 món hợp thời tiết (luật từ khoá, không cần API key).
-- **Chat nội bộ** — một phòng chat chung cho cả công ty.
+- **Chat nội bộ** — một phòng chat chung cho cả công ty, có toast thông báo kiểu Teams.
+- **Chốt đơn 18:00** — T2–T6 khoá đặt/đổi/xoá đơn sau giờ chốt; trang **Lịch sử đơn** xem lại
+  theo tháng; popup nhắc "Đặt cơm ae ơi!!!" lúc 16:30.
 - **Import CSV** — thêm hàng loạt món, có xem trước và bỏ qua món trùng.
 - **Copy danh sách** — xuất text đúng cú pháp để dán vào Word/Slack.
 
